@@ -1,0 +1,14 @@
+[scripts]
+format = 'python _combo_shell.py "docformatter am_common_lib test || docformatter am_common_lib test && isort . && black am_common_lib test ; python _prettify.py"'
+all = 'python _combo_shell.py "mypy am_common_lib test resources && docformatter am_common_lib test || docformatter am_common_lib test && isort . && black am_common_lib test ; python _prettify.py"'
+
+[dev-packages]
+pytest = "*"
+assertpy = "*"
+docformatter = "*"
+isort = "*"
+black = "*"
+setuptools = "*"
+mypy = "*"
+
+[packages]
