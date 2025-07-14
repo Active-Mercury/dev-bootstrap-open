@@ -1,0 +1,4 @@
+# Ignore artifacts:
+.idea
+.mypy_cache/*
+.pytest_cache/*
