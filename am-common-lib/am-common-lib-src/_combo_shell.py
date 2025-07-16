@@ -29,7 +29,7 @@ import subprocess
 import sys
 
 
-def main():
+def main() -> None:
     if len(sys.argv) != 2:
         print(
             f'Usage: {sys.argv[0]} "<command1> && <command2> || <command3> ; <command4>"\n'
@@ -47,7 +47,7 @@ def main():
 
     # Group tokens into commands with operators
     commands = []
-    current_cmd = []
+    current_cmd: list[str] = []
     operators = []
     i = 0
     while i < len(tokens):
