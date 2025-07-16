@@ -2,3 +2,4 @@
 .idea
 .mypy_cache/*
 .pytest_cache/*
+htmlcov/

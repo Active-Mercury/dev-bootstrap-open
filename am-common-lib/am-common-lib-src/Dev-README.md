@@ -33,3 +33,11 @@ From the project source folder,
 run
 
     pipenv run pytest -v
+
+## Linting and Formatting
+
+To get pull requests ready to merge, run:
+
+    pipenv run format
+    pipenv run chk
+    pipenv run pytest --cov=am_common_lib --cov-branch --cov-report=term-missing --cov-report=html -v

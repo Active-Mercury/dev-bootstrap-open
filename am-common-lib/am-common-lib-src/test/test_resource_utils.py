@@ -1,3 +1,5 @@
+from typing import Callable
+
 from assertpy import assert_that
 import pytest
 
@@ -16,7 +18,7 @@ from am_common_lib.resource_utils import read_resource_text
         (read_resource_bytes, "am_common_lib", "no_such_file.bin"),
     ],
 )
-def test_resource_not_found(fn, pkg, res) -> None:
+def test_resource_not_found(fn: Callable[[str, str], None], pkg: str, res: str) -> None:
     with pytest.raises(FileNotFoundError):
         fn(pkg, res)
 
