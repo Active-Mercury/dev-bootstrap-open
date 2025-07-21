@@ -1,10 +1,10 @@
 [scripts]
 format = """\
 python _combo_shell.py "\
-docformatter am_common_lib test \
-  || docformatter am_common_lib test \
+docformatter am_common_lib test devenv-test \
+  || docformatter am_common_lib test devenv-test \
   && isort . \
-  && black am_common_lib resources test \
+  && black am_common_lib resources test devenv-test \
   && python _prettify.py"\
 """
 chk = 'mypy .'
@@ -17,5 +17,6 @@ isort = "*"
 black = "*"
 setuptools = "*"
 mypy = "*"
+pytest-cov = "*"
 
 [packages]

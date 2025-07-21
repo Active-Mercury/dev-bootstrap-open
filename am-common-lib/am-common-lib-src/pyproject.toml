@@ -1,3 +1,7 @@
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["test"]
+
 [tool.docformatter]
 black = true
 recursive = true

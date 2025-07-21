@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from functools import cache
 from functools import cached_property
 import io
 import os
 from pathlib import Path
 import subprocess
+from subprocess import CompletedProcess
 import tarfile
 from types import TracebackType
 from typing import Any, BinaryIO, Literal, Optional, Sequence, Type, Union
@@ -106,23 +108,49 @@ class DockerRunner:
         return DockerRunnerUserView(self, default_user, workdir)
 
     def run(
-        self, cmd: Sequence[str], **kwargs: Any
+        self,
+        cmd: Sequence[str],
+        *,
+        exec_args: Optional[Sequence[str]] = None,
+        user: Optional[str] = None,
+        workdir: Optional[str] = None,
+        text: bool = False,
+        capture_output: bool = True,
+        **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
+        """Execute a command in the running container.
+
+        :param cmd: The command (and args) to run inside the container.
+        :param exec_args: Extra flags to pass to `docker exec` (e.g. ["-i", "-t"]).
+        :param user: User to run as inside the container (equivalent to `-u`).
+        :param workdir: Working directory inside the container (equivalent to `-w`).
+        :param text: If True, open pipes in text mode (alias for `text=`).
+        :param capture_output: The value to pass through to subprocess.run, defaults to
+            `True`. NOTE: The default value differs from the default for subprocess.run,
+            which is `False`.
+        :param kwargs: Any other keyword args for subprocess.run (e.g. check=True).
+        """
+        # Pull out any capture_output/text overrides from kwargs
+        # (so they don't get passed twice)
+        # (we already have them as named parameters)
+        # build the docker command
         docker_cmd = ["docker", "exec"]
-        user = kwargs.pop("user", None)
+        if exec_args:
+            docker_cmd.extend(exec_args)
         if user:
-            docker_cmd.extend(("-u", user))
-
-        workdir = kwargs.pop("workdir", None)
+            docker_cmd.extend(["-u", user])
         if workdir:
-            docker_cmd.extend(("-w", workdir))
-
-        text_mode = kwargs.pop("text", False)
+            docker_cmd.extend(["-w", workdir])
 
         docker_cmd.append(self._uniq_name)
         docker_cmd.extend(cmd)
 
-        return subprocess.run(docker_cmd, capture_output=True, text=text_mode, **kwargs)
+        return subprocess.run(
+            docker_cmd,
+            capture_output=capture_output,
+            text=text,
+            **kwargs,
+        )
 
     @cached_property
     def container_name(self) -> str:
@@ -186,6 +214,13 @@ class DockerRunner:
         mkdir_cmd.append(path)
         self.run(mkdir_cmd, user=user, workdir=workdir, check=True)
 
+    @cache
+    def get_home_dir(self, username: str) -> str:
+        res: CompletedProcess[str] = self.run(
+            ["sh", "-c", "echo ~"], user=username, text=True, check=True
+        )
+        return res.stdout.strip()
+
 
 class DockerRunnerUserView:
     """Represents a logged-in user's session inside a container that keeps track of the
@@ -206,15 +241,17 @@ class DockerRunnerUserView:
 
         # Validate user and get working directory
         if workdir is None:
-            result = self._base.run(
-                ["sh", "-c", "echo ~"], user=username, text=True, check=True
-            )
-            self._cwd = result.stdout.strip()
+            self._cwd = self._base.get_home_dir(username)
         else:
             result = self._base.run(
                 ["pwd"], user=username, workdir=workdir, text=True, check=True
             )
             self._cwd = result.stdout.strip()
+
+    @cached_property
+    def parent_runner(self) -> DockerRunner:
+        """Returns the parent DockerRunner for which this is a user view."""
+        return self._base
 
     @cached_property
     def username(self) -> str:
@@ -224,18 +261,40 @@ class DockerRunnerUserView:
         """
         return self._username
 
+    @cache
+    def home(self) -> str:
+        return self.parent_runner.get_home_dir(self.username)
+
     def run(
-        self, cmd: Sequence[str], **kwargs: Any
+        self,
+        cmd: Sequence[str],
+        *,
+        exec_args: Optional[Sequence[str]] = None,
+        workdir: Optional[str] = None,
+        text: bool = False,
+        capture_output: bool = True,
+        **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
         """Execute a command in the container as this view's user.
 
-        :param cmd: Command with args to execute,
-        :param kwargs: Additional execution parameters
+        :param cmd: Command (and args) to execute
+        :param exec_args: Extra flags to pass to `docker exec` (e.g. ["-i", "-t"])
+        :param workdir: If provided, override this view's cwd; otherwise uses self.getcwd().
+        :param text: If True, open pipes in text mode (alias for `text=`)
+        :param capture_output: The value to pass through to subprocess.run, defaults to `True`. NOTE: The default value differs from the default for subprocess.run, which is `False`.
+        :param kwargs: Any other subprocess.run kwargs (e.g. check=True)
         :return: Completed process result
         """
-        kwargs["user"] = self.username
-        kwargs.setdefault("workdir", self._cwd)
-        return self._base.run(cmd, **kwargs)
+        actual_workdir = workdir if workdir is not None else self._cwd
+        return self._base.run(
+            cmd,
+            exec_args=exec_args,
+            user=self.username,
+            workdir=actual_workdir,
+            text=text,
+            capture_output=capture_output,
+            **kwargs,
+        )
 
     def open(self, path: str, mode: str = "rb") -> BinaryIO:
         """Open a file in the container for reading or writing.
@@ -324,7 +383,7 @@ class DockerRunnerUserView:
         if exist_ok:
             mkdir_cmd.append("-p")
         mkdir_cmd.append(path)
-        self.run(mkdir_cmd, user=self.username, workdir=self.getcwd(), check=True)
+        self.run(mkdir_cmd, check=True)
 
     def getcwd(self) -> str:
         """Get the current working directory for this user view.

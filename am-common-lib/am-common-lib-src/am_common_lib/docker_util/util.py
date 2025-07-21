@@ -14,9 +14,19 @@ class ImageNames:
     UBUNTU_LATEST: str = "ubuntu:latest"
     PYTHON_DEV: str = "python-dev"
     PYTHON_DEV_LOADED: str = "python-dev-loaded"
+    PYTHON_DEV_DOCKER_CLI: str = "python-dev-docker-cli"
 
 
 DockerImageNames = ImageNames()
+
+
+@dataclass(frozen=True)
+class SpecialImageNames:
+    ALPINE_LATEST: str = "alpine:latest"
+    BUSYBOX_LATEST: str = "busybox:latest"
+    UBUNTU_LATEST: str = "ubuntu:latest"
+    PYTHON_DEV: str = "python-dev"
+    PYTHON_DEV_LOADED: str = "python-dev-loaded"
 
 
 def to_base_54(token: bytes) -> str:

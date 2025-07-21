@@ -21,40 +21,14 @@ def main(cmd_args: Sequence[str]) -> None:
     home_bin = os.path.expanduser(parsed_args.bin_path)
     os.makedirs(home_bin, exist_ok=True)
 
-    if not os.path.exists(shell_init_path):
-        open(shell_init_path, "a").close()
-
-    # Read the old contents
-    with open(shell_init_path, "r") as f:
-        content = f.read()
-
-    # Remove any prior dev-bootstrap snippet, ensure idempotency
-    pattern = re.compile(
-        r"(?sx)"
-        r"\n+"
-        r"\#\ *\-+          \ dev-bootstrap\ \-{20,}\ *\n"
-        r".*?"
-        r"\#\ *\-{20,}"
-        r"\n+"
-    )
-    cleaned = re.sub(pattern, "\n", content)
-
-    snippet_text = get_template().safe_substitute(
-        DEV_ENV_DIR=dev_env_dir, HOME_BIN=home_bin
-    )
-
-    # Sanity-check: our generated snippet must actually be removable by `pattern`
-    assert pattern.search(snippet_text), (
-        "snippet_text does not match the dev-bootstrap removal pattern! "
-        f"{snippet_text!r}"
-    )
+    content = ""
+    if os.path.exists(shell_init_path):
+        with open(shell_init_path, "r") as f:
+            content = dos2unix(f.read())
 
     # Write it back
-    new_content = cleaned.rstrip() + "\n\n" + snippet_text
     with open(shell_init_path, "w") as f:
-        f.write(new_content)
-
-    print(f"Updated {shell_init_path} with dev-bootstrap snippet.\n{snippet_text}")
+        f.write(replace_contents(content, dev_env_dir, home_bin))
 
     links = [
         ("scripts/cli_echo.py", "cli-echo"),
@@ -91,6 +65,37 @@ def get_parser() -> ArgumentParser:
         help="Path to the shell RC file to update (e.g., ~/bin).",
     )
     return p
+
+
+def replace_contents(orig_content: str, dev_env_dir: str, home_bin: str) -> str:
+    pattern = re.compile(
+        r"(?sx)"
+        r"\n+"
+        r"\#\ *\-+          \ dev-bootstrap\ \-{20,}\ *\n"
+        r".*?"
+        r"\#\ *\-{20,}"
+        r"\n+"
+    )
+    broken_up = pattern.split(dos2unix(orig_content))
+    insert_position = max(1, len(broken_up) - 1)
+
+    snippet_text = dos2unix(
+        get_template().safe_substitute(DEV_ENV_DIR=dev_env_dir, HOME_BIN=home_bin)
+    ).strip()
+
+    # Sanity-check: our generated snippet must actually be removable by `pattern`
+    assert pattern.search("\n" + snippet_text + "\n"), (
+        "snippet_text does not match the dev-bootstrap removal pattern! "
+        f"{snippet_text!r}"
+    )
+
+    snippet_text = snippet_text.strip()
+    broken_up.insert(insert_position, snippet_text)
+    return "\n\n".join(broken_up)
+
+
+def dos2unix(text: str) -> str:
+    return text.replace("\r\n", "\n")
 
 
 @cache
