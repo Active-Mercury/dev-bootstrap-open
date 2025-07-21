@@ -1,0 +1,6 @@
+{
+  "image_name": "python-dev-docker-cli",
+  "active": true,
+  "extract": true,
+  "run_args": ["-v", "/var/run/docker.sock:/var/run/docker.sock"]
+}
