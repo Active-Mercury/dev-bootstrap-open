@@ -334,6 +334,13 @@ class DockerRunnerUserView:
             # Ensure the directory exists in the container
             self.run(["mkdir", "-p", dest_path], check=True)
 
+            def _strip_user_group(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo:
+                tarinfo.uid = 0
+                tarinfo.gid = 0
+                tarinfo.uname = ""
+                tarinfo.gname = ""
+                return tarinfo
+
             # Stream a gzipped tarball into that dir and unpack it
             proc = subprocess.Popen(
                 [
@@ -355,7 +362,7 @@ class DockerRunnerUserView:
             )
             with tarfile.open(fileobj=proc.stdin, mode="w|gz") as tar:
                 for item in src.iterdir():
-                    tar.add(item, arcname=item.name)
+                    tar.add(item, arcname=item.name, filter=_strip_user_group)
             assert proc.stdin is not None, "proc was opened with stdin=subprocess.PIPE"
             proc.stdin.close()
             ret = proc.wait()

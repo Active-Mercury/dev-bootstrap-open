@@ -2,8 +2,14 @@
 
 ## High Priority
 
-- [x] Initialize the project.
-- [x] Write a Python test for the full installation of the dev environment.
+- [x] Introduce a script for running tests inside a docker-in-docker container.
+- [x] Introduce a dind-dev image based on docker:dind for properly running the
+      suites in a Linux environment.
+- [x] Correct DockerRunnerUserView.copy_to logic, so that the owning user will
+      now be correctly set.
+- [x] Add tests for devenv so that there is adequate coverage for the
+      executables from it that are installed. Also, this paves the way to a
+      future refactor.
 - [ ] Finish out the tests for `docker_runner.py`, especially
       `DockerRunnerUserView`.
 

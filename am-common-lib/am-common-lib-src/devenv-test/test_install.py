@@ -30,7 +30,7 @@ class ViewAndCheckedOutRepo:
 
 INSTALLABLE_FUNCTIONS: list[str] = ["ga", "gb", "gc", "gd", "gco", "gl", "gst"]
 INSTALLABLE_ALIASES: list[str] = []
-INSTALLABLE_EXECUTABLES: list[str] = ["cli-echo", "cli-echo-all", "gtl"]
+INSTALLABLE_EXECUTABLES: list[str] = ["cli-echo", "cli-echo-all", "gtl", "dedupe-path"]
 
 
 def test_config() -> None:
@@ -54,34 +54,93 @@ def test_idempotency(
     assert_that(final_sha256).is_equal_to(init_sha256)
 
 
-def test_all_symbols_accounted_for(
+def test_symbols_do_not_collide_with_existing(
+    _initialized_container_ro: ViewAndCheckedOutRepo,
+) -> None:
+    user_view = _initialized_container_ro.user_view
+    orig_executables = set(_get_executables_in_path(user_view))
+    orig_aliases = set(_get_aliases_in_session(user_view))
+    orig_functions = set(_get_functions_in_session(user_view))
+
+    with soft_assertions():
+        assert_that(
+            [x for x in INSTALLABLE_EXECUTABLES if x in orig_executables]
+        ).described_as("shadows existing executable").is_empty()
+        assert_that(
+            [x for x in INSTALLABLE_FUNCTIONS if x in orig_functions]
+        ).described_as("shadows existing function").is_empty()
+        assert_that([x for x in INSTALLABLE_ALIASES if x in orig_aliases]).described_as(
+            "shadows existing aliases"
+        ).is_empty()
+
+
+def test_installed_symbols_are_accounted_for(
     initialized_container: ViewAndCheckedOutRepo,
 ) -> None:
     user_view = initialized_container.user_view
-    orig_executables = _get_executables_in_path(user_view)
-    orig_aliases = _get_aliases_in_session(user_view)
-    orig_functions = _get_functions_in_session(user_view)
+    orig_executables = set(_get_executables_in_path(user_view))
+    orig_aliases = set(_get_aliases_in_session(user_view))
+    orig_functions = set(_get_functions_in_session(user_view))
 
     container_tgt_file = "/home/basicuser/.bashrc"
     _run_install(initialized_container, container_tgt_file)
-
-    allowed_execs = set(orig_executables) | set(INSTALLABLE_EXECUTABLES)
-    allowed_funcs = set(orig_functions) | set(INSTALLABLE_FUNCTIONS)
-    allowed_aliases = set(orig_aliases) | set(INSTALLABLE_ALIASES)
-
+    final_new_executables = [
+        x for x in _get_executables_in_path(user_view) if x not in orig_executables
+    ]
+    final_new_aliases = [
+        x for x in _get_aliases_in_session(user_view) if x not in orig_aliases
+    ]
+    final_new_functions = [
+        x for x in _get_functions_in_session(user_view) if x not in orig_functions
+    ]
     with soft_assertions():
-        final_executables = _get_executables_in_path(user_view)
-        final_aliases = _get_aliases_in_session(user_view)
-        final_functions = _get_functions_in_session(user_view)
-        assert_that(final_executables).described_as(
-            "All installed executables in PATH should be accounted for."
-        ).is_subset_of(allowed_execs)
-        assert_that(final_functions).described_as(
-            "All functions defined should be accounted for."
-        ).is_subset_of(allowed_funcs)
-        assert_that(final_aliases).described_as(
-            "All aliases defined should be accounted for."
-        ).is_subset_of(allowed_aliases)
+        assert_that(
+            [x for x in final_new_executables if x not in set(INSTALLABLE_EXECUTABLES)]
+        ).described_as(
+            "set of executables not accounted for should be empty"
+        ).is_empty()
+        assert_that(
+            [x for x in final_new_aliases if x not in set(INSTALLABLE_ALIASES)]
+        ).described_as("set of aliases not accounted for should be empty").is_empty()
+        assert_that(
+            [x for x in final_new_functions if x not in set(INSTALLABLE_FUNCTIONS)]
+        ).described_as("set of functions not accounted for should be empty").is_empty()
+
+
+def test_intended_symbols_are_installed(
+    initialized_container: ViewAndCheckedOutRepo,
+) -> None:
+    user_view = initialized_container.user_view
+    orig_executables = set(_get_executables_in_path(user_view))
+    orig_aliases = set(_get_aliases_in_session(user_view))
+    orig_functions = set(_get_functions_in_session(user_view))
+    container_tgt_file = "/home/basicuser/.bashrc"
+    _run_install(initialized_container, container_tgt_file)
+    final_new_executables = set(
+        x for x in _get_executables_in_path(user_view) if x not in orig_executables
+    )
+    final_new_aliases = set(
+        x for x in _get_aliases_in_session(user_view) if x not in orig_aliases
+    )
+    final_new_functions = set(
+        x for x in _get_functions_in_session(user_view) if x not in orig_functions
+    )
+
+    assert_that(
+        [x for x in INSTALLABLE_EXECUTABLES if x not in final_new_executables]
+    ).described_as(
+        "all executables intended to be installed should be found after installation"
+    ).is_empty()
+    assert_that(
+        [x for x in INSTALLABLE_FUNCTIONS if x not in final_new_functions]
+    ).described_as(
+        "all functions intended to be installed should be found after installation"
+    ).is_empty()
+    assert_that(
+        [x for x in INSTALLABLE_ALIASES if x not in final_new_aliases]
+    ).described_as(
+        "all aliases intended to be installed should be found after installation"
+    ).is_empty()
 
 
 def test_full_installation(
@@ -109,6 +168,20 @@ def test_full_installation(
     container_tgt_file = "/home/basicuser/.bashrc"
     _run_install(initialized_container, container_tgt_file)
     do_cmd_assertions(True)
+
+
+@pytest.mark.parametrize("shortcut", INSTALLABLE_EXECUTABLES)
+def test_sym_links(installed_container_ro: DockerRunnerUserView, shortcut: str) -> None:
+    # Assert that the symlink is not broken, that the target is executable.
+    res = installed_container_ro.run(
+        ["bash", "-ic", f"{_inspect_symlink_src()}\ninspect_symlink {shortcut}"],
+        exec_args=["-t"],
+        text=True,
+    )
+    with soft_assertions():
+        assert_that(res.returncode).described_as("returncode").is_equal_to(0)
+        assert_that(res.stdout).described_as("stdout").is_equal_to("")
+        assert_that(res.stderr).described_as("stderr").is_equal_to("")
 
 
 def _get_executables_in_path(user_view: DockerRunnerUserView) -> Sequence[str]:
@@ -150,27 +223,6 @@ def _get_functions_in_session(user_view: DockerRunnerUserView) -> Sequence[str]:
     return result.stdout.split("\n")
 
 
-@pytest.mark.parametrize(
-    "shortcut",
-    [
-        "gtl",
-        "cli-echo",
-        "cli-echo-all",
-    ],
-)
-def test_sym_links(installed_container_ro: DockerRunnerUserView, shortcut: str) -> None:
-    # Assert that the symlink is not broken, that the target is executable.
-    res = installed_container_ro.run(
-        ["bash", "-ic", f"{inspect_symlink_src()}\ninspect_symlink {shortcut}"],
-        exec_args=["-t"],
-        text=True,
-    )
-    with soft_assertions():
-        assert_that(res.returncode).described_as("returncode").is_equal_to(0)
-        assert_that(res.stdout).described_as("stdout").is_equal_to("")
-        assert_that(res.stderr).described_as("stderr").is_equal_to("")
-
-
 @lru_cache(maxsize=10)
 def _cached_read_resource_text(package: str, resource: str) -> str:
     return resource_utils.read_resource_text(package, resource)
@@ -189,17 +241,17 @@ def initialized_container() -> Generator[ViewAndCheckedOutRepo, None, None]:
 
 
 @pytest.fixture(scope="module")
-def _initialized_container_ro() -> Generator[ViewAndCheckedOutRepo, None, None]:
-    for x in _construct_initialized_container():
-        yield x
-
-
-@pytest.fixture(scope="module")
 def installed_container_ro(
     _initialized_container_ro: ViewAndCheckedOutRepo,
 ) -> DockerRunnerUserView:
     _run_install(_initialized_container_ro, "/home/basicuser/.bashrc")
     return _initialized_container_ro.user_view
+
+
+@pytest.fixture(scope="module")
+def _initialized_container_ro() -> Generator[ViewAndCheckedOutRepo, None, None]:
+    for x in _construct_initialized_container():
+        yield x
 
 
 def _run_install(
@@ -227,7 +279,7 @@ def _run_install(
 
 
 @cache
-def inspect_symlink_src() -> str:
+def _inspect_symlink_src() -> str:
     return resource_utils.read_resource_text("resources", "inspect_symlink.sh")
 
 
@@ -257,8 +309,9 @@ def _commit_current_working_tree(git_path: str) -> str:
         raise RuntimeError(
             f"fatal: not a git repository. Command response: {porcelain_status}"
         )
-    elif not porcelain_status.stdout:
+    elif not porcelain_status.stdout.strip():
         # Working tree is clean, so do not create a new commit
+        print(f"Stdout consists of {porcelain_status.stdout}")
         return subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=git_path,
@@ -335,6 +388,19 @@ def _commit_current_working_tree(git_path: str) -> str:
         ).stdout.strip()
 
     return commit_id
+
+
+def _is_working_tree_clean(git_path: str) -> bool:
+    porcelain_status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=git_path, text=True, capture_output=True
+    )
+
+    if porcelain_status.returncode == 128:
+        raise RuntimeError(
+            f"fatal: not a git repository. Command response: {porcelain_status}"
+        )
+
+    return porcelain_status.stdout == ""
 
 
 def _construct_initialized_container() -> Generator[ViewAndCheckedOutRepo, None, None]:

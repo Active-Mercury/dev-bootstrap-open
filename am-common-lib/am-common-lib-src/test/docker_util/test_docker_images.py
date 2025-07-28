@@ -1,3 +1,5 @@
+from collections import defaultdict
+from collections import deque
 from contextlib import nullcontext
 from functools import cache
 import importlib.resources
@@ -17,6 +19,69 @@ from am_common_lib.docker_util.docker_runner import DockerRunner
 
 
 @cache
+def image_dirs() -> list[Traversable]:
+    return _topologically_sort_images(
+        [path for path in docker_images_root().iterdir() if path.is_dir()]
+    )
+
+
+def _topologically_sort_images(
+    unsorted_image_dirs: list[Traversable],
+) -> list[Traversable]:
+    """Return image_dirs sorted topologically based on 'depends_on' in
+    image_info.json."""
+
+    name_to_dir: dict[str, Traversable] = {}
+    dependencies: dict[str, set[str]] = defaultdict(set)
+    reverse_deps: dict[str, set[str]] = defaultdict(set)
+
+    # First pass: read metadata
+    for d in unsorted_image_dirs:
+        info_file = d.joinpath("image_info.json")
+        if not info_file.is_file():
+            continue
+        with info_file.open("r", encoding="utf-8") as f:
+            info = json.load(f)
+
+        img_name = info.get("image_name")
+        # skip if no image_name or not active
+        if not img_name:
+            continue
+
+        name_to_dir[img_name] = d
+        for dep in info.get("depends_on", []):
+            dependencies[img_name].add(dep)
+            reverse_deps[dep].add(img_name)
+
+    # Build indegree map
+    indegree: dict[str, int] = {name: len(deps) for name, deps in dependencies.items()}
+    for name in name_to_dir:
+        indegree.setdefault(name, 0)
+
+    # Kahn's algorithm
+    queue = deque([name for name, deg in indegree.items() if deg == 0])
+    sorted_names: list[str] = []
+
+    while queue:
+        node = queue.popleft()
+        sorted_names.append(node)
+        for child in reverse_deps.get(node, []):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                queue.append(child)
+
+    # Detect cycles or unresolved dependencies
+    if len(sorted_names) < len(name_to_dir):
+        missing = set(name_to_dir) - set(sorted_names)
+        raise RuntimeError(
+            f"Circular or missing dependencies detected among: {missing}"
+        )
+
+    # Map back to directories
+    return [name_to_dir[name] for name in sorted_names]
+
+
+@cache
 def docker_images_root() -> Traversable:
     return importlib.resources.files("resources").joinpath("docker-images")
 
@@ -27,12 +92,8 @@ def test_images_dir_exists() -> None:
     )
 
 
-# Gather all subdirectories under docker-images to use as parameterized cases
-IMAGE_DIRS = [path for path in docker_images_root().iterdir() if path.is_dir()]
-
-
 @pytest.mark.parametrize(
-    "image_dir", IMAGE_DIRS, ids=[path.name for path in IMAGE_DIRS]
+    "image_dir", image_dirs(), ids=[path.name for path in image_dirs()]
 )
 def test_build_docker_image(image_dir: Traversable) -> None:
     """Build a single Docker image from its directory and assert success."""
@@ -72,6 +133,14 @@ def test_build_docker_image(image_dir: Traversable) -> None:
             capture_output=True,
             text=True,
         )
+        with soft_assertions():
+            assert_that(res1.returncode).described_as(
+                f"Return code when building {image_name} was not zero. Stderr = {res1.stderr}"
+            ).is_equal_to(0)
+            assert_that(res1.stdout).described_as(
+                f"Failed to build {image_name}: stdout"
+            ).is_equal_to("")
+
         assert_that(res1.returncode).is_equal_to(0).described_as(
             f"Failed to build {image_name} in {alias_img_dir}: {res1.stderr}"
         )
@@ -213,3 +282,9 @@ def test_dood_dockeruser(
         assert_that(res.stderr).described_as("stderr").is_equal_to("")
 
     assert_that(inner_host_name).is_not_equal_to(host_name)
+
+
+def test_correct_image_order() -> None:
+    assert_that([x.name for x in image_dirs()]).is_equal_to(
+        ["dind-dev", "python-dev", "python-dev-loaded", "python-dev-docker-cli"]
+    )
