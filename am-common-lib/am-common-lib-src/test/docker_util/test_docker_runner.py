@@ -37,10 +37,7 @@ def test_echo_hello_in_various_images(image: str) -> None:
     with DockerRunner(image) as c:
         container_name = c.container_name
         assert_that(c.img_name).is_equal_to(image)
-        # Assert that the container exists
-        assert_that(_run_docker_ps(container_name=container_name)).contains(
-            container_name
-        )
+        assert_that_container_is_running(container_name)
         res = c.run(["echo", "Hello"])
         with soft_assertions():
             assert_that(res.returncode).is_equal_to(0)
@@ -103,9 +100,7 @@ def test_auto_clean_up_false() -> None:
     try:
         with DockerRunner(image, auto_clean_up=False) as runner:
             container_name = runner.container_name
-            assert_that(_run_docker_ps(container_name=container_name)).contains(
-                container_name
-            )
+            assert_that_container_is_running(container_name)
 
         assert_that(
             _run_docker_ps(container_name=container_name, include_all=True)
@@ -119,6 +114,17 @@ def test_auto_clean_up_false() -> None:
         assert_that(
             _run_docker_ps(container_name=container_name, include_all=True)
         ).does_not_contain(container_name)
+
+
+def assert_that_container_is_running(container_name: str) -> None:
+    """Asserts that `container_name` is among the containers currently running, waiting
+    up to five seconds if necessary for it to show up in the listing from docker ps."""
+    wait_until_ns = time.monotonic_ns() + 5 * 1_000_000_000
+    all_containers = set(_run_docker_ps(container_name=container_name))
+    while container_name not in all_containers and time.monotonic_ns() < wait_until_ns:
+        time.sleep(0.1)
+        all_containers = set(_run_docker_ps(container_name=container_name))
+    assert_that(all_containers).contains(container_name)
 
 
 # ----------------------------------------------------------------------
@@ -634,9 +640,6 @@ def test_user_view_copy_to_directory_preserves_ownership(
         assert_that(result.stdout.strip()).is_equal_to(username)
 
 
-@pytest.mark.skip(
-    reason="Suspected bug in the code. UNKNOWN owner inside the container."
-)
 @pytest.mark.parametrize("image", COMMON_IMAGE_NAMES)
 def test_root_view_copy_to_directory_preserves_ownership(image: str) -> None:
     with DockerRunner(image) as runner:
