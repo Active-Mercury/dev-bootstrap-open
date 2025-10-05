@@ -46,26 +46,34 @@ class DockerRunner:
             self._img_name,
         ]
 
-        self._process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        assert self._process.stdin and self._process.stdout, (
-            "subprocess.PIPE was specified for both stdout and stdin, "
-            "so they should have been not None"
-        )
+        try:
+            self._process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            assert self._process.stdin and self._process.stdout, (
+                "subprocess.PIPE was specified for both stdout and stdin, "
+                "so they should have been not None"
+            )
 
-        if not self._skip_handshake:
-            self._process.stdin.write("echo Hi\n")
-            self._process.stdin.flush()
-            output = self._process.stdout.readline().strip()
-            if output != "Hi":
-                raise Exception(
-                    "Initialization failed: expected 'Hi', but got '{}'".format(output)
-                )
+            if not self._skip_handshake:
+                self._process.stdin.write("echo Hi\n")
+                self._process.stdin.flush()
+                output = self._process.stdout.readline().strip()
+                if output != "Hi":
+                    raise Exception(
+                        "Initialization failed: expected 'Hi', but got '{}'".format(
+                            output
+                        )
+                    )
+        except Exception:
+            # If there was an exception in this section, the __exit__ will not run,
+            # and the container is probably unusable, so remove it.
+            self._force_remove_container()
+            raise
         return self
 
     def __exit__(
@@ -86,14 +94,17 @@ class DockerRunner:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 if self._auto_clean_up:
-                    # Forcible removal, just in case. The '--rm' option should
-                    # take care of this, but perhaps it won't be timely.
-                    subprocess.run(
-                        ["docker", "rm", "-f", self.container_name],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
+                    # Just in case killing the "docker run" process was not enough
+                    self._force_remove_container()
         return False
+
+    def _force_remove_container(self) -> None:
+        """Try to remove the container forcibly on a fire-and-forget basis."""
+        subprocess.run(
+            ["docker", "rm", "-f", self.container_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def use_as(
         self, username: str, workdir: Optional[str] = None

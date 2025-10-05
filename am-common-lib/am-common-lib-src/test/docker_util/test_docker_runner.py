@@ -93,6 +93,31 @@ def test_mysql_different_versions(version: str) -> None:
     ).does_not_contain(container_name)
 
 
+def test_hand_shake_failure() -> None:
+    image = "mysql:8.0"
+
+    try:
+        # We expect the handshake to fail
+        with pytest.raises(Exception):
+            with (
+                runner := DockerRunner(
+                    image, run_args=["-e", "MYSQL_ALLOW_EMPTY_PASSWORD=yes"]
+                )
+            ) as _:
+                pass
+
+        # Sanity check -- for the following assertion to be valid
+        assert_that(runner.container_name).is_not_none()
+
+        # Assert automatic clean-up of the container
+        assert_that(
+            _run_docker_ps(container_name=runner.container_name, include_all=True)
+        ).is_empty()
+    finally:
+        # In case the test fails, ensure no clutter
+        subprocess.run(["docker", "rm", "-f", runner.container_name])
+
+
 def test_auto_clean_up_false() -> None:
     image = ImageNames.ALPINE_LATEST
     container_name = image
@@ -736,7 +761,7 @@ def _run_docker_ps(*, container_name: str, include_all: bool = False) -> List[st
     return a list of container names that match."""
     cmd = ["docker", "ps"]
     if include_all:
-        cmd.append("-a")
+        cmd.append("--all")
     cmd += ["--filter", f"name={container_name}", "--format", "{{.Names}}"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return [line for line in result.stdout.strip().splitlines() if line]
