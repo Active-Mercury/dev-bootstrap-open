@@ -19,7 +19,7 @@ First change to the project's source folder:
 
 Then
 
-    pipenv sync
+    pipenv sync --dev
 
 The virtual environment should be ready now. Confirm this by running the tests
 for the project.
