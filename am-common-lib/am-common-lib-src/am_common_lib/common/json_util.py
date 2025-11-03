@@ -1,42 +1,43 @@
+"""Utilities for working with JSON and immutable JSON values."""
+
+from __future__ import annotations
+
 import json
-from typing import Union
 
 from .immutable_dict import ImmutableDict
 from .immutable_list import ImmutableList
 
 
 # Type definitions for JSON structures
-JSONPrimitive = Union[str, int, float, bool, None]
-JSONValue = Union[JSONPrimitive, "JSONDict", "JSONList"]
-JSONDict = dict[str, JSONValue]
-JSONList = list[JSONValue]
+type JSONPrimitive = str | int | float | bool | None
+type JSONValue = JSONPrimitive | "JSONDict" | "JSONList"
+type JSONDict = dict[str, "JSONValue"]
+type JSONList = list["JSONValue"]
 
 # Type definitions for immutable JSON structures
-ImmutableJSONDict = ImmutableDict[str, "ImmutableJSONValue"]
-ImmutableJSONList = ImmutableList["ImmutableJSONValue"]
-ImmutableJSONValue = Union[JSONPrimitive, ImmutableJSONDict, ImmutableJSONList]
+type ImmutableJSONDict = ImmutableDict[str, "ImmutableJSONValue"]
+type ImmutableJSONList = ImmutableList["ImmutableJSONValue"]
+type ImmutableJSONValue = JSONPrimitive | "ImmutableJSONDict" | "ImmutableJSONList"
 
 
 def parse_json_immutable(json_str: str) -> ImmutableJSONValue:
     """Parse a JSON string and return an immutable result.
 
-    Arrays are converted to ImmutableList and objects are converted to ImmutableDict.
-    The conversion is recursive, so nested structures are also made immutable.
+    Arrays are converted to :class:`ImmutableList` and objects are converted to
+    :class:`ImmutableDict`. The conversion is recursive, so nested structures
+    are also made immutable.
 
-    Args:
-        json_str: JSON string to parse
-
-    Returns:
-        Immutable version of the parsed JSON data
+    :param str json_str: JSON string to parse.
+    :return: Immutable version of the parsed JSON data.
+    :rtype: ImmutableJSONValue
     """
 
     def _make_immutable(obj: JSONValue) -> ImmutableJSONValue:
         if isinstance(obj, dict):
             return ImmutableDict({k: _make_immutable(v) for k, v in obj.items()})
-        elif isinstance(obj, list):
+        if isinstance(obj, list):
             return ImmutableList([_make_immutable(item) for item in obj])
-        else:
-            return obj
+        return obj
 
     parsed = json.loads(json_str)
     return _make_immutable(parsed)

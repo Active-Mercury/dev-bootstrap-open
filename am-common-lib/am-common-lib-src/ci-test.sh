@@ -63,7 +63,7 @@ pipenv sync --dev
 
 pipenv run format
 require_clean "Reformatting has produced changes. Was 'format' not run?"
-pipenv run chk
+pipenv run flint
 
 # -----------------------------------------------------------------------------
 # Run tests with coverage

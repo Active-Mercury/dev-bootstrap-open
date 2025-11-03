@@ -1,5 +1,12 @@
+"""High-level API over docker CLI for running commands and file operations.
+
+Provides context-managed access to a long-lived container and user-scoped views with
+helpers for copying and reading/writing files.
+"""
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import cache
 from functools import cached_property
 import io
@@ -9,7 +16,7 @@ import subprocess
 from subprocess import CompletedProcess
 import tarfile
 from types import TracebackType
-from typing import Any, BinaryIO, Literal, Optional, Sequence, Type, Union
+from typing import Any, BinaryIO, Literal
 import uuid
 
 from .util import get_container_name_base
@@ -17,12 +24,23 @@ from .util import to_base_54
 
 
 class DockerRunner:
+    """Manage a long-running Docker container for ad-hoc execution.
+
+    Provides convenience methods to execute commands, copy files, and open file-like
+    streams within the container.
+
+    :param str img_name: Image name to run.
+    :param bool auto_clean_up: If ``True``, remove the container on exit.
+    :param Sequence[str]|None run_args: Extra flags to pass to ``docker run``.
+    :param bool skip_handshake: Skip initial echo handshake validation.
+    """
+
     def __init__(
         self,
         img_name: str,
         auto_clean_up: bool = True,
         *,
-        run_args: Optional[Sequence[str]] = None,
+        run_args: Sequence[str] | None = None,
         skip_handshake: bool = False,
     ) -> None:
         self._run_args: list[str] = list(run_args) if run_args is not None else []
@@ -65,9 +83,7 @@ class DockerRunner:
                 output = self._process.stdout.readline().strip()
                 if output != "Hi":
                     raise Exception(
-                        "Initialization failed: expected 'Hi', but got '{}'".format(
-                            output
-                        )
+                        f"Initialization failed: expected 'Hi', but got '{output}'"
                     )
         except Exception:
             # If there was an exception in this section, the __exit__ will not run,
@@ -78,9 +94,9 @@ class DockerRunner:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> Literal[False]:
         assert self._process.stdin is not None, (
             "Expecting stdin and stdout to be pipes: the docker process is always "
@@ -102,18 +118,29 @@ class DockerRunner:
         """Try to remove the container forcibly on a fire-and-forget basis."""
         subprocess.run(
             ["docker", "rm", "-f", self.container_name],
+            check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-    def use_as(
-        self, username: str, workdir: Optional[str] = None
-    ) -> DockerRunnerUserView:
+    def use_as(self, username: str, workdir: str | None = None) -> DockerRunnerUserView:
+        """Return a user-scoped view on this runner.
+
+        :param str username: Username inside the container.
+        :param str|None workdir: Optional working directory to validate and adopt.
+        :return: A user-scoped view bound to the given ``username``.
+        :rtype: DockerRunnerUserView
+        """
 
         return DockerRunnerUserView(self, username, workdir)
 
     @cached_property
     def default_view(self) -> DockerRunnerUserView:
+        """Return a user-scoped view for the container's default user.
+
+        :return: A user-scoped view bound to the default container user.
+        :rtype: DockerRunnerUserView
+        """
         default_user = self.run(["id", "-un"], text=True).stdout.strip()
         workdir = self.run(["pwd"], text=True).stdout.strip()
         return DockerRunnerUserView(self, default_user, workdir)
@@ -122,24 +149,27 @@ class DockerRunner:
         self,
         cmd: Sequence[str],
         *,
-        exec_args: Optional[Sequence[str]] = None,
-        user: Optional[str] = None,
-        workdir: Optional[str] = None,
+        exec_args: Sequence[str] | None = None,
+        user: str | None = None,
+        workdir: str | None = None,
         text: bool = False,
         capture_output: bool = True,
         **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
         """Execute a command in the running container.
 
-        :param cmd: The command (and args) to run inside the container.
-        :param exec_args: Extra flags to pass to `docker exec` (e.g. ["-i", "-t"]).
-        :param user: User to run as inside the container (equivalent to `-u`).
-        :param workdir: Working directory inside the container (equivalent to `-w`).
-        :param text: If True, open pipes in text mode (alias for `text=`).
-        :param capture_output: The value to pass through to subprocess.run, defaults to
-            `True`. NOTE: The default value differs from the default for subprocess.run,
-            which is `False`.
-        :param kwargs: Any other keyword args for subprocess.run (e.g. check=True).
+        :param Sequence[str] cmd: Command (and args) to execute.
+        :param Sequence[str]|None exec_args: Extra flags for ``docker exec`` (e.g.,
+            ``["-i", "-t"]``).
+        :param str|None user: User to run as (equivalent to ``-u``).
+        :param str|None workdir: Working directory (equivalent to ``-w``).
+        :param bool text: Open pipes in text mode (alias for ``text=``).
+        :param bool capture_output: Forwarded to ``subprocess.run``; defaults to
+            ``True``.
+        :param Any **kwargs: Additional ``subprocess.run`` keyword arguments (e.g.,
+            ``check=True``).
+        :return: Completed process result.
+        :rtype: subprocess.CompletedProcess[Any]
         """
         # Pull out any capture_output/text overrides from kwargs
         # (so they don't get passed twice)
@@ -165,23 +195,45 @@ class DockerRunner:
 
     @cached_property
     def container_name(self) -> str:
+        """Get the underlying container name.
+
+        :return: The unique Docker container name for this runner instance.
+        :rtype: str
+        """
         return self._uniq_name
 
     @cached_property
     def img_name(self) -> str:
+        """Get the image name this runner was created with.
+
+        :return: Original Docker image name.
+        :rtype: str
+        """
         return self._img_name
 
     def copy_from(
         self, src_path: str, dest_path: str
     ) -> subprocess.CompletedProcess[str]:
-        """Copy from the container using 'docker cp'."""
+        """Copy from the container using ``docker cp``.
+
+        :param str src_path: Path inside the container to copy from.
+        :param str dest_path: Path on the host to copy to.
+        :return: Completed process result.
+        :rtype: subprocess.CompletedProcess[str]
+        """
         cp_command = ["docker", "cp", f"{self._uniq_name}:{src_path}", dest_path]
         return subprocess.run(cp_command, capture_output=True, check=True, text=True)
 
     def copy_to(
-        self, src_path: Union[str, Path, Sequence[Union[str, Path]]], dest_path: str
+        self, src_path: str | Path | Sequence[str | Path], dest_path: str
     ) -> subprocess.CompletedProcess[str]:
-        """Copy a file or folder into the container via 'docker cp'."""
+        """Copy a file or folder into the container via ``docker cp``.
+
+        :param str|Path|Sequence[str|Path] src_path: Local source path(s).
+        :param str dest_path: Destination path inside the container.
+        :return: Completed process result.
+        :rtype: subprocess.CompletedProcess[str]
+        """
         if isinstance(src_path, (str, Path)):
             sources = [str(src_path)]
         else:
@@ -197,9 +249,21 @@ class DockerRunner:
         self,
         path: str,
         mode: str = "rb",
-        user: Optional[str] = None,
-        workdir: Optional[str] = None,
+        user: str | None = None,
+        workdir: str | None = None,
     ) -> BinaryIO:
+        """Open a container file for binary read or write.
+
+        :param path: Absolute or relative file path inside the container.
+        :type path: str
+        :param mode: Either ``"rb"`` or ``"wb"``.
+        :type mode: str
+        :param str|None user: Username to use for the operation.
+        :param str|None workdir: Working directory for relative paths.
+        :return: A binary file-like object backed by docker exec.
+        :rtype: BinaryIO
+        :raises ValueError: If an unsupported mode is provided.
+        """
         if mode not in {"rb", "wb"}:
             raise ValueError(f"Unsupported mode: {mode!r}")
 
@@ -217,8 +281,15 @@ class DockerRunner:
         exist_ok: bool = True,
         workdir: str | None = None,
     ) -> None:
-        """Recursively create directories inside the container, roughly mirroring
-        ``os.makedirs`` semantics."""
+        """Recursively create directories inside the container.
+
+        Roughly mirrors ``os.makedirs`` semantics.
+
+        :param str path: Directory path to create.
+        :param str|None user: Username for the operation.
+        :param bool exist_ok: Do not error if the directory exists.
+        :param str|None workdir: Working directory for relative paths.
+        """
         mkdir_cmd = ["mkdir"]
         if exist_ok:
             mkdir_cmd.append("-p")
@@ -227,6 +298,12 @@ class DockerRunner:
 
     @cache
     def get_home_dir(self, username: str) -> str:
+        """Return the home directory for ``username`` inside the container.
+
+        :param str username: The container username.
+        :return: Absolute path to the user's home directory.
+        :rtype: str
+        """
         res: CompletedProcess[str] = self.run(
             ["sh", "-c", "echo ~"], user=username, text=True, check=True
         )
@@ -234,18 +311,18 @@ class DockerRunner:
 
 
 class DockerRunnerUserView:
-    """Represents a logged-in user's session inside a container that keeps track of the
-    current working directory."""
+    """Represent a logged-in user's session inside a container.
 
-    def __init__(
-        self, base: DockerRunner, username: str, workdir: Optional[str] = None
-    ):
-        """Initialize a user-specific view of the container.
+    Keeps track of the current working directory and provides helpers that run
+    commands/files as the associated user.
 
-        :param base: The DockerRunner instance this view is based on
-        :param username: The username to operate as within the container
-        :param workdir: The working directory for operations (defaults to user's home)
-        """
+    :param DockerRunner base: The DockerRunner instance this view is based on.
+    :param str username: The username to operate as within the container.
+    :param workdir: The working directory for operations (defaults to user's home).
+    :type workdir: str | None
+    """
+
+    def __init__(self, base: DockerRunner, username: str, workdir: str | None = None):
         self._base = base
         self._username = username
         self._cwd: str
@@ -261,40 +338,54 @@ class DockerRunnerUserView:
 
     @cached_property
     def parent_runner(self) -> DockerRunner:
-        """Returns the parent DockerRunner for which this is a user view."""
+        """Get the parent runner for which this is a user view.
+
+        :return: The parent :class:`DockerRunner` instance.
+        :rtype: DockerRunner
+        """
         return self._base
 
     @cached_property
     def username(self) -> str:
         """Get the username associated with this view.
 
-        :return: The username used for operations in this view
+        :return: The username used for operations in this view.
+        :rtype: str
         """
         return self._username
 
     @cache
     def home(self) -> str:
+        """Cached home directory for this user view.
+
+        :return: Home directory path inside the container.
+        :rtype: str
+        """
         return self.parent_runner.get_home_dir(self.username)
 
     def run(
         self,
         cmd: Sequence[str],
         *,
-        exec_args: Optional[Sequence[str]] = None,
-        workdir: Optional[str] = None,
+        exec_args: Sequence[str] | None = None,
+        workdir: str | None = None,
         text: bool = False,
         capture_output: bool = True,
         **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
         """Execute a command in the container as this view's user.
 
-        :param cmd: Command (and args) to execute
-        :param exec_args: Extra flags to pass to `docker exec` (e.g. ["-i", "-t"])
-        :param workdir: If provided, override this view's cwd; otherwise uses self.getcwd().
-        :param text: If True, open pipes in text mode (alias for `text=`)
-        :param capture_output: The value to pass through to subprocess.run, defaults to `True`. NOTE: The default value differs from the default for subprocess.run, which is `False`.
-        :param kwargs: Any other subprocess.run kwargs (e.g. check=True)
-        :return: Completed process result
+        :param Sequence[str] cmd: Command (and args) to execute.
+        :param Sequence[str]|None exec_args: Extra flags for ``docker exec``
+            (e.g., ``["-i", "-t"]``).
+        :param str|None workdir: If provided, overrides this view's cwd; otherwise
+            uses :py:meth:`getcwd`.
+        :param bool text: Open pipes in text mode (alias for ``text=``).
+        :param bool capture_output: Value passed to ``subprocess.run``. Defaults to
+            ``True`` (unlike the default in ``subprocess.run`` which is ``False``).
+        :param Any **kwargs: Any other ``subprocess.run`` kwargs (e.g., ``check=True``).
+        :return: Completed process result.
+        :rtype: subprocess.CompletedProcess[Any]
         """
         actual_workdir = workdir if workdir is not None else self._cwd
         return self._base.run(
@@ -310,15 +401,16 @@ class DockerRunnerUserView:
     def open(self, path: str, mode: str = "rb") -> BinaryIO:
         """Open a file in the container for reading or writing.
 
-        :param path: File path to open (relative to current working directory)
-        :param mode: File mode ('rb' for reading, 'wb' for writing)
-        :return: File-like object for container file access
+        :param str path: File path to open (relative to current working directory).
+        :param str mode: File mode (``'rb'`` for reading, ``'wb'`` for writing).
+        :return: File-like object for container file access.
+        :rtype: BinaryIO
         """
         return self._base.open(path, mode=mode, user=self.username, workdir=self._cwd)
 
     def copy_to(
         self,
-        src_path: Union[str, Path],
+        src_path: str | Path,
         dest_path: str,
         makedirs: bool = True,
     ) -> None:
@@ -331,9 +423,11 @@ class DockerRunnerUserView:
 
         Preserves user ownership and permissions.
 
-        :param src_path: Local source file/directory path
-        :param dest_path: Container destination path
-        :param makedirs: Create parent directories if missing (default True)
+        :param src_path: Local source file/directory path.
+        :type src_path: str | Path
+        :param str dest_path: Container destination path.
+        :param bool makedirs: Create parent directories if missing (default
+            ``True``).
         :raises FileNotFoundError: If source path doesn't exist
         :raises RuntimeError: If directory extraction fails
         """
@@ -394,8 +488,8 @@ class DockerRunnerUserView:
     def makedirs(self, path: str, exist_ok: bool = True) -> None:
         """Create directories in the container as the current user.
 
-        :param path: Directory path to create
-        :param exist_ok: Don't raise error if directory exists (default True)
+        :param str path: Directory path to create.
+        :param bool exist_ok: Don't raise error if directory exists (default ``True``).
         """
         mkdir_cmd = ["mkdir"]
         if exist_ok:
@@ -406,14 +500,15 @@ class DockerRunnerUserView:
     def getcwd(self) -> str:
         """Get the current working directory for this user view.
 
-        :return: Absolute path of current working directory
+        :return: Absolute path of current working directory.
+        :rtype: str
         """
         return self._cwd
 
     def chdir(self, new_dir: str) -> None:
         """Change the current working directory for this user view.
 
-        :param new_dir: New working directory path
+        :param str new_dir: New working directory path.
         """
         result = self.run(["pwd"], workdir=new_dir, text=True, check=True)
         self._cwd = result.stdout.strip()
@@ -421,9 +516,10 @@ class DockerRunnerUserView:
     def write_file(self, file_name: str, contents: bytes) -> int:
         """Write content to a file in the container as the current user.
 
-        :param file_name: Target filename (relative to working directory)
-        :param contents: Binary content to write
-        :return: Number of bytes written
+        :param str file_name: Target filename (relative to working directory).
+        :param bytes contents: Binary content to write.
+        :return: Number of bytes written.
+        :rtype: int
         """
         with self.open(file_name, "wb") as wf:
             return wf.write(contents)
@@ -431,8 +527,9 @@ class DockerRunnerUserView:
     def read_file(self, file_name: str) -> bytes:
         """Read content from a file in the container as the current user.
 
-        :param file_name: Source filename (relative to working directory)
-        :return: Binary content of the file
+        :param str file_name: Source filename (relative to working directory).
+        :return: Binary content of the file.
+        :rtype: bytes
         """
         with self.open(file_name, "rb") as f:
             return f.read()
@@ -444,8 +541,8 @@ class _DockerFileIO(io.RawIOBase, BinaryIO):
         runner: DockerRunner,
         path: str,
         mode: str,
-        user: Optional[str] = None,
-        cwd: Optional[str] = None,
+        user: str | None = None,
+        cwd: str | None = None,
     ) -> None:
         self._runner = runner
         self.path = path
@@ -453,7 +550,7 @@ class _DockerFileIO(io.RawIOBase, BinaryIO):
         self.user = user
         self._cwd = cwd
         # tell mypy this will later be a Popen[bytes]
-        self._proc: Optional[subprocess.Popen[bytes]] = None
+        self._proc: subprocess.Popen[bytes] | None = None
 
     def __enter__(self) -> _DockerFileIO:
         base_cmd = ["docker", "exec", "-i"]
@@ -484,9 +581,9 @@ class _DockerFileIO(io.RawIOBase, BinaryIO):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         # We know __enter__ must have been called, so _proc is set
         assert self._proc is not None, "FileIO must be open before exiting"
@@ -517,7 +614,7 @@ class _DockerFileIO(io.RawIOBase, BinaryIO):
         self._proc.stdin.flush()
         return len(data)
 
-    def read(self, data_size: Optional[int] = None) -> bytes:
+    def read(self, data_size: int | None = None) -> bytes:
         if self._mode != "rb" or not self._proc or not self._proc.stdout:
             raise ValueError("File not open for reading.")
 

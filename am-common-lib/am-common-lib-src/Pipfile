@@ -1,13 +1,41 @@
 [scripts]
 format = """\
-python _combo_shell.py "\
-docformatter am_common_lib test devenv-test \
+python _combo_shell.py "
+  ruff check am_common_lib test devenv-test \
+    --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
+    --fix-only \
+    -q \
+    --exit-zero
+  && docformatter am_common_lib test devenv-test \
   || docformatter am_common_lib test devenv-test \
   && isort . \
   && black am_common_lib resources test devenv-test \
   && python _prettify.py"\
 """
-chk = 'mypy .'
+flint = """\
+python _combo_shell.py "
+  ruff check am_common_lib test devenv-test \
+    --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
+    --fix-only \
+    -q \
+    --exit-zero
+  && docformatter am_common_lib test devenv-test \
+  || docformatter am_common_lib test devenv-test \
+  && isort . \
+  && black am_common_lib resources test devenv-test \
+  && python _prettify.py \
+  && ruff check am_common_lib test devenv-test \
+  && pydoclint am_common_lib \
+  && mypy ."
+"""
+ruff-unsafe = """\
+ruff check am_common_lib test devenv-test \
+  --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
+  --fix-only \
+  --unsafe-fixes \
+  -q \
+  --exit-zero
+"""
 
 [dev-packages]
 pytest = "*"
@@ -19,5 +47,7 @@ setuptools = "*"
 mypy = "*"
 pytest-cov = "*"
 pytest-html = "*"
+pydoclint = "*"
+ruff = "*"
 
 [packages]
