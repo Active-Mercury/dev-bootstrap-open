@@ -1,5 +1,7 @@
 from collections import defaultdict
 from collections import deque
+from collections.abc import Generator
+from contextlib import AbstractContextManager
 from contextlib import nullcontext
 from functools import cache
 import importlib.resources
@@ -8,7 +10,6 @@ import json
 from pathlib import Path
 import shlex
 import subprocess
-from typing import ContextManager, Generator, Tuple
 
 from assertpy import assert_that
 from assertpy import soft_assertions
@@ -25,17 +26,14 @@ def image_dirs() -> list[Traversable]:
     )
 
 
-def _topologically_sort_images(
+def _build_dependency_graph(
     unsorted_image_dirs: list[Traversable],
-) -> list[Traversable]:
-    """Return image_dirs sorted topologically based on 'depends_on' in
-    image_info.json."""
-
+) -> tuple[dict[str, Traversable], dict[str, set[str]], dict[str, set[str]]]:
+    """Build graph structures from image metadata."""
     name_to_dir: dict[str, Traversable] = {}
     dependencies: dict[str, set[str]] = defaultdict(set)
     reverse_deps: dict[str, set[str]] = defaultdict(set)
 
-    # First pass: read metadata
     for d in unsorted_image_dirs:
         info_file = d.joinpath("image_info.json")
         if not info_file.is_file():
@@ -44,7 +42,6 @@ def _topologically_sort_images(
             info = json.load(f)
 
         img_name = info.get("image_name")
-        # skip if no image_name or not active
         if not img_name:
             continue
 
@@ -53,12 +50,19 @@ def _topologically_sort_images(
             dependencies[img_name].add(dep)
             reverse_deps[dep].add(img_name)
 
-    # Build indegree map
+    return name_to_dir, dependencies, reverse_deps
+
+
+def _kahn_sort(
+    name_to_dir: dict[str, Traversable],
+    dependencies: dict[str, set[str]],
+    reverse_deps: dict[str, set[str]],
+) -> list[Traversable]:
+    """Return nodes in topological order using Kahn's algorithm."""
     indegree: dict[str, int] = {name: len(deps) for name, deps in dependencies.items()}
     for name in name_to_dir:
         indegree.setdefault(name, 0)
 
-    # Kahn's algorithm
     queue = deque([name for name, deg in indegree.items() if deg == 0])
     sorted_names: list[str] = []
 
@@ -70,15 +74,23 @@ def _topologically_sort_images(
             if indegree[child] == 0:
                 queue.append(child)
 
-    # Detect cycles or unresolved dependencies
     if len(sorted_names) < len(name_to_dir):
         missing = set(name_to_dir) - set(sorted_names)
         raise RuntimeError(
             f"Circular or missing dependencies detected among: {missing}"
         )
 
-    # Map back to directories
     return [name_to_dir[name] for name in sorted_names]
+
+
+def _topologically_sort_images(
+    unsorted_image_dirs: list[Traversable],
+) -> list[Traversable]:
+    """Return image_dirs sorted topologically based on 'depends_on' metadata."""
+    name_to_dir, dependencies, reverse_deps = _build_dependency_graph(
+        unsorted_image_dirs
+    )
+    return _kahn_sort(name_to_dir, dependencies, reverse_deps)
 
 
 @cache
@@ -120,7 +132,7 @@ def test_build_docker_image(image_dir: Traversable) -> None:
     if not info.get("active", False):
         pytest.skip(f"Skipping {image_dir.name} because it is not active")
 
-    ctx: ContextManager[Path | Traversable]
+    ctx: AbstractContextManager[Path | Traversable]
     if info.get("extract", False):
         ctx = importlib.resources.as_file(image_dir)
     else:
@@ -130,12 +142,14 @@ def test_build_docker_image(image_dir: Traversable) -> None:
         # Build the Docker image
         res1 = subprocess.run(
             ["docker", "build", "-t", image_name, str(alias_img_dir)],
+            check=False,
             capture_output=True,
             text=True,
         )
         with soft_assertions():
             assert_that(res1.returncode).described_as(
-                f"Return code when building {image_name} was not zero. Stderr = {res1.stderr}"
+                f"Return code when building {image_name} was not zero. "
+                f"Stderr = {res1.stderr}"
             ).is_equal_to(0)
             assert_that(res1.stdout).described_as(
                 f"Failed to build {image_name}: stdout"
@@ -159,6 +173,7 @@ def test_build_docker_image(image_dir: Traversable) -> None:
         print(shlex.join(cmd_args))
         res2 = subprocess.run(
             cmd_args,
+            check=False,
             capture_output=True,
         )
         with soft_assertions():
@@ -170,7 +185,7 @@ def test_build_docker_image(image_dir: Traversable) -> None:
 
 
 @pytest.fixture(scope="class")
-def docker_oo_docker_container() -> Generator[Tuple[DockerRunner, str], None, None]:
+def docker_oo_docker_container() -> Generator[tuple[DockerRunner, str]]:
     extra_args = [
         "-v",
         "/var/run/docker.sock:/var/run/docker.sock",
@@ -189,7 +204,7 @@ def docker_oo_docker_container() -> Generator[Tuple[DockerRunner, str], None, No
 
 
 def test_dood_parent_docker_runner_root(
-    docker_oo_docker_container: Tuple[DockerRunner, str],
+    docker_oo_docker_container: tuple[DockerRunner, str],
 ) -> None:
     runner, host_name = docker_oo_docker_container
     res = runner.run(["id", "-un"], text=True)
@@ -220,7 +235,7 @@ def test_dood_parent_docker_runner_root(
 
 
 def test_dood_superuser(
-    docker_oo_docker_container: Tuple[DockerRunner, str],
+    docker_oo_docker_container: tuple[DockerRunner, str],
 ) -> None:
     runner, host_name = docker_oo_docker_container
     user_view = runner.use_as("superuser")
@@ -252,7 +267,7 @@ def test_dood_superuser(
 
 
 def test_dood_dockeruser(
-    docker_oo_docker_container: Tuple[DockerRunner, str],
+    docker_oo_docker_container: tuple[DockerRunner, str],
 ) -> None:
     runner, host_name = docker_oo_docker_container
     user_view = runner.use_as("dockeruser")

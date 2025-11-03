@@ -1,13 +1,23 @@
+"""Immutable list type.
+
+The :class:`ImmutableList` provides list-like semantics for access and
+iteration while blocking all mutation operations. Slices return an
+``ImmutableList``.
+"""
+
 from functools import cached_property
-from typing import Any, cast, Generic, TypeVar, Union
+from typing import Any, cast, TypeVar
 
 
 T = TypeVar("T")
 
 
-class ImmutableList(list[T], Generic[T]):
-    def __init__(self, elements: Any) -> None:
-        super().__init__(elements)
+class ImmutableList[T](list[T]):
+    """A hashable, immutable sequence.
+
+    Any mutation attempt raises :class:`TypeError`. Slicing returns a new
+    :class:`ImmutableList` view.
+    """
 
     @cached_property
     def _hash(self) -> int:
@@ -33,10 +43,10 @@ class ImmutableList(list[T], Generic[T]):
     def __delattr__(self, name: str) -> None:
         raise TypeError("ImmutableList is immutable")
 
-    def __getitem__(self, index: Union[int, slice]) -> Union[T, "ImmutableList[T]"]:  # type: ignore[override]
+    def __getitem__(self, index: int | slice) -> T | "ImmutableList[T]":  # type: ignore[override]
         result = super().__getitem__(index)
         if isinstance(index, slice):
-            return cast("ImmutableList[T]", ImmutableList(result))
+            return cast("ImmutableList[T]", ImmutableList(cast(list[T], result)))
         return cast(T, result)
 
     def _blocked(self, *args: Any, **kwargs: Any) -> None:

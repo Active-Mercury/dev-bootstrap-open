@@ -13,14 +13,13 @@ from am_common_lib.common import parse_json_immutable
 def _is_deeply_immutable(obj: Any) -> bool:
     if isinstance(obj, (str, int, float, bool, type(None))):
         return True
-    elif isinstance(obj, ImmutableDict):
+    if isinstance(obj, ImmutableDict):
         return all(_is_deeply_immutable(v) for v in obj.values()) and all(
-            isinstance(k, str) for k in obj.keys()
+            isinstance(k, str) for k in obj
         )
-    elif isinstance(obj, ImmutableList):
+    if isinstance(obj, ImmutableList):
         return all(_is_deeply_immutable(v) for v in obj)
-    else:
-        return False
+    return False
 
 
 @pytest.mark.parametrize(
@@ -47,12 +46,19 @@ def _is_deeply_immutable(obj: Any) -> bool:
         ),
         ("[1, 2, [3, 4, [5, 6]]]", "nested_arrays"),
         (
-            '{"primitives": {"string": "text", "number": 42, "float": 3.14, "boolean": true, "null": null}}',
+            (
+                '{"primitives": {'
+                '"string": "text", "number": 42, "float": 3.14, '
+                '"boolean": true, "null": null}}'
+            ),
             "all_primitive_types",
         ),
         ('{"unicode": "café", "emoji": "🚀", "chinese": "中文"}', "unicode_strings"),
         (
-            '{"special_chars": "line1\\nline2\\ttabbed", "quotes": "he said \\"hello\\""}',
+            (
+                '{"special_chars": "line1\\nline2\\ttabbed", '
+                '"quotes": "he said \\"hello\\""}'
+            ),
             "special_characters",
         ),
         ('{"large_array": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}', "large_array"),
@@ -70,7 +76,12 @@ def _is_deeply_immutable(obj: Any) -> bool:
         ('{"duplicate_keys": {"a": 1, "a": 2}}', "duplicate_keys"),
         ('{"sparse_array": [1, null, 3, null, 5]}', "sparse_array_with_nulls"),
         (
-            '{"complex": {"users": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}], "metadata": {"count": 2}}}',
+            (
+                '{"complex": {'
+                '"users": [{"name": "Alice", "age": 30}, '
+                '{"name": "Bob", "age": 25}], '
+                '"metadata": {"count": 2}}}'
+            ),
             "complex_real_world_structure",
         ),
     ],

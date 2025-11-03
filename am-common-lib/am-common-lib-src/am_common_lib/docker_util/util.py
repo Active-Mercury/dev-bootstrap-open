@@ -1,14 +1,17 @@
+"""Utility helpers for docker-related tests and tooling."""
+
 from dataclasses import dataclass
 import functools
 from functools import cache
 import re
 import string
-from typing import Optional, Tuple
 import zlib
 
 
 @dataclass(frozen=True)
 class ImageNames:
+    """Canonical Docker image names used across tests."""
+
     ALPINE_LATEST: str = "alpine:latest"
     BUSYBOX_LATEST: str = "busybox:latest"
     UBUNTU_LATEST: str = "ubuntu:latest"
@@ -22,6 +25,8 @@ DockerImageNames = ImageNames()
 
 @dataclass(frozen=True)
 class SpecialImageNames:
+    """Special-case image names used in certain scenarios."""
+
     ALPINE_LATEST: str = "alpine:latest"
     BUSYBOX_LATEST: str = "busybox:latest"
     UBUNTU_LATEST: str = "ubuntu:latest"
@@ -30,6 +35,13 @@ class SpecialImageNames:
 
 
 def to_base_54(token: bytes) -> str:
+    """Encode ``token`` into an unambiguous base-54 string.
+
+    :param bytes token: Arbitrary bytes to encode.
+    :return: Encoded representation using a 54-character alphabet with ambiguous glyphs
+        removed.
+    :rtype: str
+    """
     if len(token) == 0:
         return ""
     char_set = _generate_charset()
@@ -49,7 +61,7 @@ def to_base_54(token: bytes) -> str:
 
 
 @functools.lru_cache(maxsize=10)
-def get_container_name_base(img_name: str, max_length: Optional[int] = None) -> str:
+def get_container_name_base(img_name: str, max_length: int | None = None) -> str:
     """Get a prefix for Docker container names based on the image name.
 
     This function replaces any character in the provided image name that is not
@@ -57,9 +69,11 @@ def get_container_name_base(img_name: str, max_length: Optional[int] = None) -> 
     underscore, period, or hyphen) with an underscore, ensuring the result is a valid
     container name base.
 
-    :param img_name: The original Docker image name to sanitize.
-    :param max_length: Optional maximum length of the result (must be >= 2).
+    :param str img_name: The original Docker image name to sanitize.
+    :param int|None max_length: Optional maximum length (must be ``>=2``).
     :return: A sanitized string suitable for use as a Docker container name.
+    :rtype: str
+    :raises ValueError: If ``max_length`` is provided and less than 2.
     """
     sanitized_base = re.sub(r"[^A-Za-z0-9_.-]+", "_", img_name)
     if not re.match(r"^[A-Za-z0-9]", sanitized_base):
@@ -78,7 +92,7 @@ def get_container_name_base(img_name: str, max_length: Optional[int] = None) -> 
 
 
 @cache
-def _generate_charset() -> Tuple[str, ...]:
+def _generate_charset() -> tuple[str, ...]:
     ambiguous = {"0", "1", "i", "I", "L", "O", "l", "o"}
     return tuple(
         sorted(c for c in string.digits + string.ascii_letters if c not in ambiguous)

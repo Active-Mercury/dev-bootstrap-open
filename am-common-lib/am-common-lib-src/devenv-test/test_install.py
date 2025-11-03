@@ -1,3 +1,5 @@
+from collections.abc import Generator
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cache
 from functools import lru_cache
@@ -10,7 +12,6 @@ import shlex
 import subprocess
 from subprocess import CompletedProcess
 import tempfile
-from typing import Generator, Sequence, Tuple, Union
 
 from assertpy import assert_that
 from assertpy import soft_assertions
@@ -116,15 +117,15 @@ def test_intended_symbols_are_installed(
     orig_functions = set(_get_functions_in_session(user_view))
     container_tgt_file = "/home/basicuser/.bashrc"
     _run_install(initialized_container, container_tgt_file)
-    final_new_executables = set(
+    final_new_executables = {
         x for x in _get_executables_in_path(user_view) if x not in orig_executables
-    )
-    final_new_aliases = set(
+    }
+    final_new_aliases = {
         x for x in _get_aliases_in_session(user_view) if x not in orig_aliases
-    )
-    final_new_functions = set(
+    }
+    final_new_functions = {
         x for x in _get_functions_in_session(user_view) if x not in orig_functions
-    )
+    }
 
     assert_that(
         [x for x in INSTALLABLE_EXECUTABLES if x not in final_new_executables]
@@ -229,15 +230,14 @@ def _cached_read_resource_text(package: str, resource: str) -> str:
 
 
 @cache
-def _commit_to_checkout() -> Tuple[str, Path]:
+def _commit_to_checkout() -> tuple[str, Path]:
     repo_path = _get_toplevel(__file__)
     return _commit_current_working_tree(str(repo_path)), repo_path
 
 
 @pytest.fixture(scope="function")
-def initialized_container() -> Generator[ViewAndCheckedOutRepo, None, None]:
-    for x in _construct_initialized_container():
-        yield x
+def initialized_container() -> Generator[ViewAndCheckedOutRepo]:
+    yield from _construct_initialized_container()
 
 
 @pytest.fixture(scope="module")
@@ -249,9 +249,8 @@ def installed_container_ro(
 
 
 @pytest.fixture(scope="module")
-def _initialized_container_ro() -> Generator[ViewAndCheckedOutRepo, None, None]:
-    for x in _construct_initialized_container():
-        yield x
+def _initialized_container_ro() -> Generator[ViewAndCheckedOutRepo]:
+    yield from _construct_initialized_container()
 
 
 def _run_install(
@@ -284,7 +283,7 @@ def _inspect_symlink_src() -> str:
 
 
 @cache
-def _get_toplevel(for_path: Union[str, os.PathLike[str]]) -> Path:
+def _get_toplevel(for_path: str | os.PathLike[str]) -> Path:
     """Get the git top-level (or root) for the file or folder 'for_path'."""
     r: CompletedProcess[str] = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
@@ -302,14 +301,18 @@ def _commit_current_working_tree(git_path: str) -> str:
     working tree, without checking it out or disturbing the state of the working tree or
     index."""
     porcelain_status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=git_path, text=True, capture_output=True
+        ["git", "status", "--porcelain"],
+        check=False,
+        cwd=git_path,
+        text=True,
+        capture_output=True,
     )
 
     if porcelain_status.returncode == 128:
         raise RuntimeError(
             f"fatal: not a git repository. Command response: {porcelain_status}"
         )
-    elif not porcelain_status.stdout.strip():
+    if not porcelain_status.stdout.strip():
         # Working tree is clean, so do not create a new commit
         print(f"Stdout consists of {porcelain_status.stdout}")
         return subprocess.run(
@@ -330,6 +333,7 @@ def _commit_current_working_tree(git_path: str) -> str:
         head_exists = (
             subprocess.run(
                 ["git", "rev-parse", "--verify", "HEAD"],
+                check=False,
                 cwd=git_path,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -377,7 +381,7 @@ def _commit_current_working_tree(git_path: str) -> str:
         if head_exists:
             commit_cmd.extend(["-p", "HEAD"])
 
-        commit_id = subprocess.run(
+        return subprocess.run(
             commit_cmd,
             cwd=git_path,
             env=env,
@@ -387,12 +391,14 @@ def _commit_current_working_tree(git_path: str) -> str:
             text=True,
         ).stdout.strip()
 
-    return commit_id
-
 
 def _is_working_tree_clean(git_path: str) -> bool:
     porcelain_status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=git_path, text=True, capture_output=True
+        ["git", "status", "--porcelain"],
+        check=False,
+        cwd=git_path,
+        text=True,
+        capture_output=True,
     )
 
     if porcelain_status.returncode == 128:
@@ -403,7 +409,7 @@ def _is_working_tree_clean(git_path: str) -> bool:
     return porcelain_status.stdout == ""
 
 
-def _construct_initialized_container() -> Generator[ViewAndCheckedOutRepo, None, None]:
+def _construct_initialized_container() -> Generator[ViewAndCheckedOutRepo]:
     """Returns a container loaded with a copy of the repository, checked out to the
     right commit."""
     commit_id, repo_path = _commit_to_checkout()
@@ -420,8 +426,8 @@ def _construct_initialized_container() -> Generator[ViewAndCheckedOutRepo, None,
 
 
 def _calculate_mount_args(
-    repo_to_mount: Union[str, os.PathLike[str]], container_base_path: PurePosixPath
-) -> Tuple[Sequence[str], PurePosixPath]:
+    repo_to_mount: str | os.PathLike[str], container_base_path: PurePosixPath
+) -> tuple[Sequence[str], PurePosixPath]:
     """
     Returns:
       - extra_args: Docker -v args to mount the minimal host dir (read-only)
@@ -470,7 +476,7 @@ def _load(
     return ViewAndCheckedOutRepo(user_view, PurePosixPath(container_repo_tgt_path))
 
 
-def _get_root_to_mount(repo_to_mount: Union[str, os.PathLike[str]]) -> Path:
+def _get_root_to_mount(repo_to_mount: str | os.PathLike[str]) -> Path:
     """Compute the minimal host directory that must be mounted so both the Git working
     tree and its metadata are accessible.
 

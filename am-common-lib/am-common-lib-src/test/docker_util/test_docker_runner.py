@@ -1,3 +1,4 @@
+from collections.abc import Generator
 import hashlib
 import os
 from pathlib import Path
@@ -7,7 +8,7 @@ import shlex
 import subprocess
 import tempfile
 import time
-from typing import BinaryIO, Generator, List
+from typing import BinaryIO
 
 from assertpy import assert_that
 from assertpy import soft_assertions
@@ -98,13 +99,15 @@ def test_hand_shake_failure() -> None:
 
     try:
         # We expect the handshake to fail
-        with pytest.raises(Exception):
-            with (
+        with (
+            pytest.raises(Exception),
+            (
                 runner := DockerRunner(
                     image, run_args=["-e", "MYSQL_ALLOW_EMPTY_PASSWORD=yes"]
                 )
-            ) as _:
-                pass
+            ) as _,
+        ):
+            pass
 
         # Sanity check -- for the following assertion to be valid
         assert_that(runner.container_name).is_not_none()
@@ -115,7 +118,7 @@ def test_hand_shake_failure() -> None:
         ).is_empty()
     finally:
         # In case the test fails, ensure no clutter
-        subprocess.run(["docker", "rm", "-f", runner.container_name])
+        subprocess.run(["docker", "rm", "-f", runner.container_name], check=False)
 
 
 def test_auto_clean_up_false() -> None:
@@ -133,7 +136,10 @@ def test_auto_clean_up_false() -> None:
     finally:
         # Now clean up manually
         rm = subprocess.run(
-            ["docker", "rm", "-f", container_name], capture_output=True, text=True
+            ["docker", "rm", "-f", container_name],
+            check=False,
+            capture_output=True,
+            text=True,
         )
         assert_that(rm.returncode).is_equal_to(0)
         assert_that(
@@ -258,11 +264,10 @@ def test_folder_copy_from(image: str) -> None:
 
 @pytest.mark.parametrize("image", COMMON_IMAGE_NAMES)
 def test_copy_from_nonexistent(image: str) -> None:
-    with DockerRunner(image) as c:
-        with tempfile.TemporaryDirectory() as td:
-            dest = os.path.join(td, "missing.txt")
-            with pytest.raises(subprocess.CalledProcessError):
-                c.copy_from("/no/such/path.txt", dest)
+    with DockerRunner(image) as c, tempfile.TemporaryDirectory() as td:
+        dest = os.path.join(td, "missing.txt")
+        with pytest.raises(subprocess.CalledProcessError):
+            c.copy_from("/no/such/path.txt", dest)
 
 
 # ----------------------------------------------------------------------
@@ -369,7 +374,8 @@ def test_copy_to_directory_source_paths(image: str, relative_src: str) -> None:
             finally:
                 os.chdir(old_cwd)
 
-        # Now verify inside the container that each file exists and has the right contents
+        # Now verify inside the container that each file exists
+        # and has the right contents
         for rel, content in files.items():
             remote_path = posixpath.join(dest, rel)
             res = c.run(["cat", remote_path], text=True, check=True)
@@ -385,9 +391,8 @@ def test_copy_to_directory_source_paths(image: str, relative_src: str) -> None:
 
 @pytest.mark.parametrize("image", COMMON_IMAGE_NAMES)
 def test_copy_to_nonexistent_source_raises(image: str) -> None:
-    with DockerRunner(image) as c:
-        with pytest.raises(subprocess.CalledProcessError):
-            c.copy_to("no_such_src.txt", "/")
+    with DockerRunner(image) as c, pytest.raises(subprocess.CalledProcessError):
+        c.copy_to("no_such_src.txt", "/")
 
 
 # ----------------------------------------------------------------------
@@ -548,13 +553,13 @@ def test_makedirs_with_user(image: str, user: str) -> None:
 
 
 @pytest.fixture(scope="function")
-def user_view_rw_operations() -> Generator[DockerRunnerUserView, None, None]:
+def user_view_rw_operations() -> Generator[DockerRunnerUserView]:
     with DockerRunner(ImageNames.PYTHON_DEV) as base:
         yield base.use_as("basicuser")
 
 
 @pytest.fixture(scope="class")
-def user_view_ro_operations() -> Generator[DockerRunnerUserView, None, None]:
+def user_view_ro_operations() -> Generator[DockerRunnerUserView]:
     with DockerRunner(ImageNames.PYTHON_DEV) as base:
         yield base.use_as("basicuser")
 
@@ -756,7 +761,7 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def _run_docker_ps(*, container_name: str, include_all: bool = False) -> List[str]:
+def _run_docker_ps(*, container_name: str, include_all: bool = False) -> list[str]:
     """Run `docker ps`, optionally including stopped containers, filtered by name, and
     return a list of container names that match."""
     cmd = ["docker", "ps"]

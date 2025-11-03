@@ -32,3 +32,39 @@ extend-exclude = '''am_common_lib/__main__\.py$'''
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "F", # pyflakes errors
+    "W", # pycodestyle warnings
+    "UP",  # pyupgrade rules
+    "C90", # mccabe complexity
+    "D100", "D101", "D102", "D103", "D104", "D106",
+]
+ignore = [
+    "E203",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["D"]
+"devenv-test/**" = ["D"]
+
+[tool.pydoclint]
+quiet = true # #1 (DEFAULT = false)
+style = "sphinx" # #3 (DEFAULT = numpy)
+skip-checking-short-docstrings = false # #6 (DEFAULT = true)
+only-attrs-with-classvar-are-treated-as-class-attrs = true # #18 (DEFAULT = false)
+check-style-mismatch = true # #20 (DEFAULT: false)
+show-filenames-in-every-violation-message = true # #25 (DEFAULT = true)
