@@ -16,7 +16,6 @@ def main() -> None:
         "docker",
         "run",
         "--rm",
-        "-it",
         "-v",
         f"{this_dir}:{container_repo}",
         "-w",
@@ -29,7 +28,7 @@ def main() -> None:
     ]
 
     print(f"Running: {shlex.join(cmd)}")
-    exit(subprocess.run(cmd).returncode)
+    exit(subprocess.run(cmd, check=False).returncode)
 
 
 if __name__ == "__main__":

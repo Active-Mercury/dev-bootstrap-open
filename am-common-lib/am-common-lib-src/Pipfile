@@ -1,39 +1,25 @@
 [scripts]
-format = """\
-python _combo_shell.py "
-  ruff check am_common_lib test devenv-test \
-    --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
-    --fix-only \
-    -q \
-    --exit-zero
-  && docformatter am_common_lib test devenv-test \
-  || docformatter am_common_lib test devenv-test \
-  && isort . \
-  && black am_common_lib resources test devenv-test \
-  && python _prettify.py"\
-"""
 flint = """\
 python _combo_shell.py "
-  ruff check am_common_lib test devenv-test \
-    --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
+  ruff check . \
+    --select UP,I,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
     --fix-only \
-    -q \
-    --exit-zero
-  && docformatter am_common_lib test devenv-test \
-  || docformatter am_common_lib test devenv-test \
-  && isort . \
-  && black am_common_lib resources test devenv-test \
+    --quiet \
+    --exit-zero \
+  && docformatter . \
+  || docformatter . \
+  && ruff format . \
   && python _prettify.py \
-  && ruff check am_common_lib test devenv-test \
+  && ruff check . \
   && pydoclint am_common_lib \
   && mypy ."
 """
 ruff-unsafe = """\
-ruff check am_common_lib test devenv-test \
-  --select UP,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
+ruff check . \
+  --select UP,I,F,A,B,C4,ERA,PIE,SIM,RET,TRY,PL \
   --fix-only \
   --unsafe-fixes \
-  -q \
+  --quiet \
   --exit-zero
 """
 
@@ -41,9 +27,6 @@ ruff check am_common_lib test devenv-test \
 pytest = "*"
 assertpy = "*"
 docformatter = "*"
-isort = "*"
-black = "*"
-setuptools = "*"
 mypy = "*"
 pytest-cov = "*"
 pytest-html = "*"

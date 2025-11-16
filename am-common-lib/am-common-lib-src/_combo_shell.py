@@ -29,11 +29,13 @@ import subprocess
 import sys
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     if len(sys.argv) != 2:
         print(
-            f'Usage: {sys.argv[0]} "<command1> && <command2> || <command3> ; <command4>"\n'
-            "Mimics 'bash -c' behavior for command chaining, but runs natively in Python.\n"
+            "Usage: "
+            f'{sys.argv[0]} "<command1> && <command2> || <command3> ; <command4>"\n'
+            "Mimics 'bash -c' behavior for command chaining, "
+            "but runs natively in Python.\n"
             "Supports:\n"
             "  &&    Run next command only if the previous succeeded\n"
             "  ||    Run next command only if the previous failed\n"
@@ -67,9 +69,7 @@ def main() -> None:
         # Determine whether to run this command
         if i > 0:
             op = operators[i - 1]
-            if op == "&&" and last_exit_code != 0:
-                continue
-            elif op == "||" and last_exit_code == 0:
+            if op == "&&" and last_exit_code != 0 or op == "||" and last_exit_code == 0:
                 continue
             # for ';' or any case that falls through, we continue to run
 
