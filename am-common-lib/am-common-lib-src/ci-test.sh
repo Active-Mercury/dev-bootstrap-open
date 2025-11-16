@@ -61,9 +61,8 @@ pipenv sync --dev
 # Reformat and style checks
 # -----------------------------------------------------------------------------
 
-pipenv run format
-require_clean "Reformatting has produced changes. Was 'format' not run?"
 pipenv run flint
+require_clean "Formatter/linter has produced changes. Was 'flint' not run locally?"
 
 # -----------------------------------------------------------------------------
 # Run tests with coverage

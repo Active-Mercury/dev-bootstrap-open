@@ -42,3 +42,13 @@ To get pull requests ready to merge, run:
     pipenv run flint
     pipenv run pytest -v --cov=am_common_lib --cov-branch --cov-report=term-missing --cov-report=html
     pipenv run pytest -v devenv-test
+
+Key Pipenv commands:
+
+- `pipenv sync --dev`: Synchronize the virtual environment with the `Pipfile`.
+- `pipenv run flint`: Run the full formatter-linter pipeline (Ruff,
+  docformatter, Prettier, pydoclint, mypy).
+- `pipenv run pytest ...`: Run the test suite inside the Pipenv-managed virtual
+  environment.
+- `pipenv run ruff-unsafe`: Run Ruff with unsafe auto-fixes enabled; use this
+  sparingly for more aggressive cleanups.
