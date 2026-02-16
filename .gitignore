@@ -54,6 +54,7 @@ coverage.xml
 .pytest_cache/
 cover/
 /ci_test.out
+/.ci-reports/
 
 # Translations
 *.mo

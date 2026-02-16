@@ -32,5 +32,6 @@ pytest-cov = "*"
 pytest-html = "*"
 pydoclint = "*"
 ruff = "*"
+pytest-xdist = "*"
 
 [packages]

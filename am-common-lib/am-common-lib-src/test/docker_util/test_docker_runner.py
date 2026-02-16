@@ -67,12 +67,14 @@ def test_mysql_different_versions(version: str) -> None:
         skip_handshake=True,
     ) as db:
         container_name = db.container_name
-        # Wait up to 30 s for MySQL to become available
-        for _ in range(30):
+
+        # Wait up to 120 s for MySQL to become available
+        wait_until_ns = time.monotonic_ns() + 120 * 1_000_000_000
+        while time.monotonic_ns() < wait_until_ns:
             res = db.run(["mysqladmin", "ping", "--silent"])
             if res.returncode == 0:
                 break
-            time.sleep(1)
+            time.sleep(0.2)
         else:
             pytest.fail("MySQL did not start in time")
 

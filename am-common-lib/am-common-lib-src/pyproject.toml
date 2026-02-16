@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 pythonpath = "."
 testpaths = ["test"]
+addopts = "-n auto --maxprocesses=4 --dist loadgroup"
 
 [tool.docformatter]
 black = true

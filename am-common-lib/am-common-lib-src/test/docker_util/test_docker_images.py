@@ -19,6 +19,9 @@ from am_common_lib.docker_util import ImageNames
 from am_common_lib.docker_util.docker_runner import DockerRunner
 
 
+pytestmark = pytest.mark.xdist_group("docker")
+
+
 @cache
 def image_dirs() -> list[Traversable]:
     return _topologically_sort_images(
