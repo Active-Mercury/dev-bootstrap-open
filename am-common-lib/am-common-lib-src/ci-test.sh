@@ -38,13 +38,11 @@ mkdir -p /home/dockeruser/git_repos
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 
-git clone \
-  "file://${REPO_ROOT}" \
-  /home/dockeruser/git_repos/dev-bootstrap
+CI_COMMIT="${1:?Error: a commit hash argument is required.}"
+
+git clone "file://${REPO_ROOT}" /home/dockeruser/git_repos/dev-bootstrap
 cd ~/git_repos/dev-bootstrap
-if [ -n "${1-}" ]; then
-  git checkout "$1"
-fi
+git checkout "$CI_COMMIT"
 
 COMMIT=$(git rev-parse HEAD)
 echo "At commit: $COMMIT"
@@ -55,27 +53,53 @@ TREE_HASH=$(git rev-parse HEAD^{tree})
 echo "At tree: $TREE_HASH"
 
 cd ~/git_repos/dev-bootstrap/am-common-lib/am-common-lib-src
-pipenv sync --dev
+uv sync
 
 # -----------------------------------------------------------------------------
 # Reformat and style checks
 # -----------------------------------------------------------------------------
 
-pipenv run flint
-require_clean "Formatter/linter has produced changes. Was 'flint' not run locally?"
+uv run fflint
+require_clean "Formatter/linter has produced changes. Was 'fflint' not run locally?"
+
+# -----------------------------------------------------------------------------
+# Packaging test – build, install into a fresh venv, and verify
+# -----------------------------------------------------------------------------
+echo "==> Running packaging tests..."
+
+PKG_TEST_REPO=~/git_repos/am-common-lib-pkg-test
+git clone "file://${REPO_ROOT}" "$PKG_TEST_REPO"
+cd "$PKG_TEST_REPO"
+git checkout "$CI_COMMIT"
+
+# Build the package following the steps documented in README.md
+cd "$PKG_TEST_REPO/am-common-lib/am-common-lib-src"
+uv build
+
+# Create a completely fresh virtual environment (no dev dependencies)
+PKG_VENV=~/pkg_test_venv/.venv
+"$(uv python find 3.13)" -m venv "$PKG_VENV"
+
+# Install only the built wheel
+"$PKG_VENV/bin/pip" install dist/am_common_lib-*.whl
+
+# Run the packaging sanity tests with the fresh venv's Python
+"$PKG_VENV/bin/python" "$PKG_TEST_REPO/am-common-lib/am-common-lib-src/resources/test_install.py" -v
 
 # -----------------------------------------------------------------------------
 # Run tests with coverage
 # -----------------------------------------------------------------------------
+cd ~/git_repos/dev-bootstrap/am-common-lib/am-common-lib-src
+
 echo "==> Running pytest with coverage report (term-missing + HTML)..."
 mkdir -p reports
 
-pipenv run pytest -v devenv-test \
+uv run pytest -v devenv-test \
   --junitxml=reports/junit_devenv-test.xml \
   --html=reports/pytest_devenv-test.html \
   --self-contained-html
 
-pipenv run pytest -v \
+uv run pytest -v \
   --cov=am_common_lib \
   --cov-branch \
   --cov-report=term-missing \

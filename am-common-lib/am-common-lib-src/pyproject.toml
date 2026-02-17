@@ -1,7 +1,44 @@
+[project]
+name = "am-common-lib"
+version = "0.2"
+description = "Common utilities and helpers shared across projects"
+readme = "Dev-README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "assertpy",
+  "docformatter",
+  "mypy",
+  "pydoclint",
+  "pytest",
+  "pytest-cov",
+  "pytest-html",
+  "pytest-xdist",
+  "ruff",
+  "am-common-lib-devtools",
+]
+
+[tool.uv.sources]
+am-common-lib-devtools = { path = "_devtools", editable = true }
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+
 [tool.pytest.ini_options]
 pythonpath = "."
 testpaths = ["test"]
 addopts = "-n auto --maxprocesses=4 --dist loadgroup"
+
+# ---------------------------------------------------------------------------
+# docformatter
+# ---------------------------------------------------------------------------
 
 [tool.docformatter]
 black = true
@@ -9,10 +46,19 @@ recursive = true
 in-place = true
 style = "sphinx"
 
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+
 [tool.mypy]
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
+exclude = ["resources/test_install\\.py"]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
 
 [tool.ruff]
 line-length = 88
@@ -21,17 +67,20 @@ fix = true
 
 [tool.ruff.lint]
 select = [
-    "E", # pycodestyle errors
-    "F", # pyflakes errors
-    "W", # pycodestyle warnings
-    "I", # isort (import sorting)
-    "UP",  # pyupgrade rules
-    "C90", # mccabe complexity
-    "D100", "D101", "D102", "D103", "D104", "D106",
+  "E",    # pycodestyle errors
+  "F",    # pyflakes errors
+  "W",    # pycodestyle warnings
+  "I",    # isort (import sorting)
+  "UP",   # pyupgrade rules
+  "C90",  # mccabe complexity
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D106",
 ]
-ignore = [
-    "E203",
-]
+ignore = ["E203"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8
@@ -42,6 +91,7 @@ convention = "pep257"
 [tool.ruff.lint.per-file-ignores]
 "test/**" = ["D"]
 "devenv-test/**" = ["D"]
+"resources/test_install.py" = ["D102"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
@@ -54,10 +104,14 @@ lines-after-imports = 2
 [tool.ruff.format]
 docstring-code-format = true
 
+# ---------------------------------------------------------------------------
+# pydoclint
+# ---------------------------------------------------------------------------
+
 [tool.pydoclint]
-quiet = true # #1 (DEFAULT = false)
-style = "sphinx" # #3 (DEFAULT = numpy)
-skip-checking-short-docstrings = false # #6 (DEFAULT = true)
+quiet = true                                               # #1 (DEFAULT = false)
+style = "sphinx"                                           # #3 (DEFAULT = numpy)
+skip-checking-short-docstrings = false                     # #6 (DEFAULT = true)
 only-attrs-with-classvar-are-treated-as-class-attrs = true # #18 (DEFAULT = false)
-check-style-mismatch = true # #20 (DEFAULT: false)
-show-filenames-in-every-violation-message = true # #25 (DEFAULT = true)
+check-style-mismatch = true                                # #20 (DEFAULT: false)
+show-filenames-in-every-violation-message = true           # #25 (DEFAULT = true)

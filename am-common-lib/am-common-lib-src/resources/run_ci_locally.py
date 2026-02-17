@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
+import hashlib
 import json
 import os
 import os.path
@@ -37,14 +38,22 @@ except ImportError:
 
 
 MOUNTED_BASE_PATH: Final[PurePosixPath] = PurePosixPath("/home/dockeruser/src-git")
-CONTAINER_NAME_PREFIX: Final[str] = "my-dind-local-ci"
-DIND_CACHE_VOLUME_NAME: Final[str] = "dind-cache"
 DOCKER_IMAGES_DIR: Final[Path] = (
     Path(__file__).resolve().parents[1] / "test" / "resources" / "docker-images"
 )
 CI_SCRIPT_REL_PATH: Final[PurePosixPath] = PurePosixPath("ci-test")
 CONTAINER_REPO_CLONE_DIR: Final[PurePosixPath] = PurePosixPath(
     "/home/dockeruser/git_repos/dev-bootstrap/am-common-lib/am-common-lib-src"
+)
+UV_CACHE_CONTAINER_PATH: Final[str] = "/home/dockeruser/.cache/uv"
+UV_DATA_CONTAINER_PATH: Final[str] = "/home/dockeruser/.local/share/uv"
+_CI_TEMP_REF: Final[str] = "refs/heads/__ci_working_tree__"
+GIT_WRITE_WORKING_TREE_SCRIPT: Final[Path] = (
+    Path(__file__).resolve().parents[1]
+    / "_devtools"
+    / "src"
+    / "_devtools"
+    / "git_write_working_tree.py"
 )
 
 
@@ -78,18 +87,36 @@ def main(cmd_args: Sequence[str], prog_path: str) -> None:
 
     repo_root = _resolve_repo_root()
     _ensure_prerequisites()
-    _ensure_dind_cache_volume_exists()
+
+    ci_commit, _, needs_ref_cleanup = _capture_working_tree_commit(repo_root)
+
+    project_id = _compute_project_identity()
+    container_name = parsed_args.container_name or project_id
+    dind_volume = f"{project_id}_lib_docker"
+    uv_cache_volume = f"{project_id}_uv_cache"
+    uv_data_volume = f"{project_id}_uv_data"
+
+    _ensure_volume_exists(dind_volume)
+    _ensure_volume_exists(uv_cache_volume)
+    _ensure_volume_exists(uv_data_volume)
     _build_host_dind_image()
 
     mounting_args = calculate_mounting_args(repo_root, MOUNTED_BASE_PATH)
-    container_name = parsed_args.container_name or CONTAINER_NAME_PREFIX
 
-    _run_local_ci(
-        container_name=container_name,
-        repo_root=repo_root,
-        mounting_args=mounting_args,
-        keep_container=parsed_args.keep_container,
-    )
+    try:
+        _run_local_ci(
+            container_name=container_name,
+            repo_root=repo_root,
+            mounting_args=mounting_args,
+            keep_container=parsed_args.keep_container,
+            dind_volume=dind_volume,
+            uv_cache_volume=uv_cache_volume,
+            uv_data_volume=uv_data_volume,
+            ci_commit=ci_commit,
+        )
+    finally:
+        if needs_ref_cleanup:
+            _cleanup_temp_ref(repo_root)
 
 
 def calculate_mounting_args(
@@ -162,15 +189,113 @@ def _resolve_repo_root() -> Path:
     return Path(proc.stdout.strip()).resolve()
 
 
+def _compute_project_identity() -> str:
+    """Compute a deterministic container name from the project folder path.
+
+    :return: Container name in the form ``{folder_name}_{short_hash}``.
+    :rtype: str
+    """
+    project_dir = Path(__file__).resolve().parents[1]
+    path_hash = hashlib.blake2b(str(project_dir).encode(), digest_size=4).hexdigest()
+    return f"{project_dir.name}_{path_hash}"
+
+
+def _capture_working_tree_commit(repo_root: Path) -> tuple[str, int, bool]:
+    """Obtain a commit whose tree matches the current working directory state.
+
+    Runs ``git_write_working_tree.py`` to compute the tree hash that
+    represents all tracked content (including uncommitted changes), then
+    records ``unix_time_ms``.  If HEAD already points at this tree the
+    HEAD commit is returned; otherwise a new commit object is created
+    with ``git commit-tree`` and a temporary branch ref is created so
+    that the commit is reachable during ``git clone file://...``.
+
+    :param Path repo_root: Repository root directory.
+    :return: ``(commit_hash, unix_time_ms, needs_ref_cleanup)``.
+    :rtype: tuple[str, int, bool]
+    """
+    tree_hash = subprocess.run(
+        [sys.executable, str(GIT_WRITE_WORKING_TREE_SCRIPT)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(repo_root),
+    ).stdout.strip()
+    unix_time_ms = time.time_ns() // 1_000_000
+
+    head_tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(repo_root),
+    ).stdout.strip()
+
+    if head_tree == tree_hash:
+        head_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(repo_root),
+        ).stdout.strip()
+        print(f"Working tree matches HEAD ({head_commit}).", flush=True)
+        return head_commit, unix_time_ms, False
+
+    commit_hash = subprocess.run(
+        [
+            "git",
+            "commit-tree",
+            tree_hash,
+            "-p",
+            "HEAD",
+            "-m",
+            f"ci: working-tree snapshot at {unix_time_ms}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(repo_root),
+    ).stdout.strip()
+
+    subprocess.run(
+        ["git", "update-ref", _CI_TEMP_REF, commit_hash],
+        check=True,
+        cwd=str(repo_root),
+    )
+
+    print(
+        f"Created working-tree commit {commit_hash} (tree {tree_hash}, parent HEAD).",
+        flush=True,
+    )
+    return commit_hash, unix_time_ms, True
+
+
+def _cleanup_temp_ref(repo_root: Path) -> None:
+    """Delete the temporary branch ref created for CI.
+
+    :param Path repo_root: Repository root directory.
+    """
+    subprocess.run(
+        ["git", "update-ref", "-d", _CI_TEMP_REF],
+        check=False,
+        cwd=str(repo_root),
+        capture_output=True,
+    )
+
+
 def _ensure_prerequisites() -> None:
     """Verify required external tools are available."""
     for tool in ("docker", "git"):
         _run_checked([tool, "--version"], capture_output=True)
 
 
-def _ensure_dind_cache_volume_exists() -> None:
-    """Create the dind cache volume if it does not exist."""
-    _run_checked(["docker", "volume", "create", DIND_CACHE_VOLUME_NAME])
+def _ensure_volume_exists(volume_name: str) -> None:
+    """Create a Docker volume if it does not already exist.
+
+    :param str volume_name: Name of the Docker volume to create.
+    """
+    _run_checked(["docker", "volume", "create", volume_name])
 
 
 def _build_host_dind_image() -> None:
@@ -190,8 +315,14 @@ def _run_local_ci(
     repo_root: Path,
     mounting_args: MountingArgs,
     keep_container: bool,
+    dind_volume: str,
+    uv_cache_volume: str,
+    uv_data_volume: str,
+    ci_commit: str,
 ) -> None:
-    _stop_containers_using_volume(DIND_CACHE_VOLUME_NAME)
+    _stop_containers_using_volume(dind_volume)
+    _stop_containers_using_volume(uv_cache_volume)
+    _stop_containers_using_volume(uv_data_volume)
     _remove_container_if_exists(container_name)
 
     with tempfile.TemporaryDirectory() as tempdir:
@@ -216,9 +347,24 @@ def _run_local_ci(
                 "--name",
                 container_name,
                 "-v",
-                f"{DIND_CACHE_VOLUME_NAME}:/var/lib/docker",
+                f"{dind_volume}:/var/lib/docker",
+                "-v",
+                f"{uv_cache_volume}:{UV_CACHE_CONTAINER_PATH}",
+                "-v",
+                f"{uv_data_volume}:{UV_DATA_CONTAINER_PATH}",
                 *mount_args,
                 "dind-dev",
+            ]
+        )
+        _run_checked(
+            [
+                "docker",
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "chown -R dockeruser:dockeruser"
+                " /home/dockeruser/.cache /home/dockeruser/.local",
             ]
         )
         try:
@@ -232,6 +378,7 @@ def _run_local_ci(
                 container_name=container_name,
                 repo_in_container=mounting_args.worktree.in_path,
                 log_path=log_path,
+                ci_commit=ci_commit,
             )
             reports_file_path = _collect_and_bundle_results(
                 container_name=container_name,
@@ -239,6 +386,7 @@ def _run_local_ci(
                 ci_log_path=log_path,
                 tempdir_path=tempdir_path,
                 run_timestamp=run_timestamp,
+                ci_passed=ci_exit_code == 0,
             )
             print(f"Created report bundle: {reports_file_path}", flush=True)
             if ci_exit_code != 0:
@@ -464,6 +612,7 @@ def _stream_ci_output(
     container_name: str,
     repo_in_container: PurePosixPath,
     log_path: Path,
+    ci_commit: str,
 ) -> int:
     """Run CI script in container and tee output to host log.
 
@@ -471,6 +620,7 @@ def _stream_ci_output(
     :param repo_in_container: Path to the repo worktree inside the container.
     :type repo_in_container: PurePosixPath
     :param Path log_path: Host path to write the CI log to.
+    :param str ci_commit: Commit hash to check out inside the container.
     :return: The exit code from the CI script.
     :rtype: int
     """
@@ -491,6 +641,7 @@ def _stream_ci_output(
         container_name,
         "bash",
         str(ci_script_in_container),
+        ci_commit,
     ]
     print(f"Running: {shlex.join(cmd_args)}", flush=True)
     with subprocess.Popen(
@@ -516,6 +667,7 @@ def _collect_and_bundle_results(
     ci_log_path: Path,
     tempdir_path: Path,
     run_timestamp: datetime,
+    ci_passed: bool,
 ) -> Path:
     """Extract reports from the container and bundle with the CI log.
 
@@ -525,6 +677,7 @@ def _collect_and_bundle_results(
     :param Path tempdir_path: Scratch directory for intermediate files.
     :param run_timestamp: UTC timestamp captured right before the CI run.
     :type run_timestamp: datetime
+    :param bool ci_passed: Whether the CI run completed successfully.
     :return: Path to the final reports tarball.
     :rtype: Path
     """
@@ -534,6 +687,7 @@ def _collect_and_bundle_results(
         inner_archive_path=inner_archive_path,
         ci_log_path=ci_log_path,
         run_timestamp=run_timestamp,
+        ci_passed=ci_passed,
     )
 
 
@@ -560,7 +714,14 @@ def _tee_process_output(process: subprocess.Popen[str], log_file: TextIO) -> Non
     if process.stdout is None:
         raise RuntimeError("Expected process stdout to be available.")
     for line in iter(process.stdout.readline, ""):
-        print(line, end="", flush=True)
+        try:
+            print(line, end="", flush=True)
+        except UnicodeEncodeError:
+            print(
+                line.encode("ascii", errors="replace").decode("ascii"),
+                end="",
+                flush=True,
+            )
         log_file.write(line)
         log_file.flush()
 
@@ -610,6 +771,7 @@ def _assemble_final_reports_bundle(
     inner_archive_path: Path | None,
     ci_log_path: Path,
     run_timestamp: datetime,
+    ci_passed: bool,
 ) -> Path:
     """Assemble final reports bundle under the repository `.ci-reports` directory.
 
@@ -619,6 +781,7 @@ def _assemble_final_reports_bundle(
     :param Path ci_log_path: Path to the CI log file on the host.
     :param run_timestamp: UTC timestamp captured right before the CI run.
     :type run_timestamp: datetime
+    :param bool ci_passed: Whether the CI run completed successfully.
     :return: Path to the final reports tarball.
     :rtype: Path
     """
@@ -632,7 +795,8 @@ def _assemble_final_reports_bundle(
     else:
         suffix = ts
 
-    final_archive_name = f"ci_reports_{suffix}.tar.gz"
+    status = "PASSED" if ci_passed else "FAILED"
+    final_archive_name = f"ci_reports_{status}_{suffix}.tar.gz"
     ci_log_name = f"ci_test_{suffix}.out"
     final_archive_path = reports_dir / final_archive_name
 

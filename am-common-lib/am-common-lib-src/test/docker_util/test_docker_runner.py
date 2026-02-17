@@ -531,18 +531,22 @@ def test_makedirs_with_user(image: str, user: str) -> None:
         base_path = Path("/", "home", user)
         target1 = (base_path / "new-directory").as_posix()
         c.makedirs(target1, user=user)
-        c.run(["test", "-d", target1], check=True)
+        c.run(["test", "-d", target1], user=user, check=True)
         target2 = (base_path / "foo" / "bar").as_posix()
         c.makedirs(target2, user=user)
-        c.run(["test", "-d", target2], check=True)
+        c.run(["test", "-d", target2], user=user, check=True)
 
         # Verify ownership
         res = c.run(
-            ["stat", "-c", "%U", (base_path / "foo").as_posix()], text=True, check=True
+            ["stat", "-c", "%U", (base_path / "foo").as_posix()],
+            user=user,
+            text=True,
+            check=True,
         )
         assert_that(res.stdout.strip()).is_equal_to(user)
         res = c.run(
             ["stat", "-c", "%U", (base_path / "foo" / "bar").as_posix()],
+            user=user,
             text=True,
             check=True,
         )

@@ -19,7 +19,7 @@ First change to the project's source folder:
 
 Then
 
-    pipenv sync --dev
+    uv sync
 
 The virtual environment should be ready now. Confirm this by running the tests
 for the project.
@@ -33,11 +33,11 @@ From the project source folder,
 
 run
 
-    pipenv run pytest -v
+    uv run pytest -v
 
 ## Packaging
 
 To create a distribution package, run
 
-    cd <base_path>/am-common-lib
-    python -m build
+    cd <base_path>/am-common-lib/am-common-lib-src
+    uv build
