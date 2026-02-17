@@ -12,7 +12,7 @@ Some links:
 - Project [TODOs](docs/TODO.md)
 - [Scratch pad](docs/Scratch.md) during development
 
-## Ensuring the virtual environment is in sync with the Pipfile
+## Ensuring the virtual environment is in sync
 
 First change to the project's source folder:
 
@@ -21,7 +21,7 @@ First change to the project's source folder:
 
 Then
 
-    pipenv sync --dev
+    uv sync
 
 ## Running tests
 
@@ -32,23 +32,50 @@ From the project source folder,
 
 run
 
-    pipenv run pytest -v
-    pipenv run pytest -v devenv-test
+    uv run pytest -v
+    uv run pytest -v devenv-test
 
 ## Linting and Formatting
 
 To get pull requests ready to merge, run:
 
-    pipenv run flint
-    pipenv run pytest -v --cov=am_common_lib --cov-branch --cov-report=term-missing --cov-report=html
-    pipenv run pytest -v devenv-test
+    uv run fflint
+    uv run pytest -v --cov=am_common_lib --cov-branch --cov-report=term-missing --cov-report=html
+    uv run pytest -v devenv-test
 
-Key Pipenv commands:
+Key uv commands:
 
-- `pipenv sync --dev`: Synchronize the virtual environment with the `Pipfile`.
-- `pipenv run flint`: Run the full formatter-linter pipeline (Ruff,
-  docformatter, Prettier, pydoclint, mypy).
-- `pipenv run pytest ...`: Run the test suite inside the Pipenv-managed virtual
+- `uv sync`: Install all dependencies (including dev tools) into the virtual
   environment.
-- `pipenv run ruff-unsafe`: Run Ruff with unsafe auto-fixes enabled; use this
-  sparingly for more aggressive cleanups.
+- `uv sync --no-group dev`: Install only production dependencies.
+- `uv run fflint`: Run the full formatter-linter pipeline (Ruff, docformatter,
+  Prettier, pydoclint, mypy).
+- `uv run pytest ...`: Run the test suite inside the uv-managed virtual
+  environment.
+- `uv add <pkg>`: Add a production dependency.
+- `uv add --group dev <pkg>`: Add a dev dependency.
+
+## Dev tooling (`_devtools/`)
+
+The `_devtools/` directory at the project root is a **separate** Python package
+that provides the `fflint` and `prettify` console scripts. It is installed as an
+editable dev dependency (`uv sync` installs it). It is _not_ part of the
+distributable `am_common_lib` library. The `_devtools/` code is subject to the
+same formatting and linting rules as the rest of the project (it is covered by
+`fflint`) but is excluded from test coverage statistics (`--cov=am_common_lib`
+only measures the main library).
+
+## Common commands
+
+| Task                         | Command                    |
+| ---------------------------- | -------------------------- |
+| Install all deps (with dev)  | `uv sync`                  |
+| Install only production deps | `uv sync --no-group dev`   |
+| Add a production dependency  | `uv add <pkg>`             |
+| Add a dev dependency         | `uv add --group dev <pkg>` |
+| Remove a dependency          | `uv remove <pkg>`          |
+| Run a command in the venv    | `uv run <cmd>`             |
+| Run the formatter-linter     | `uv run fflint`            |
+| Run the test suite           | `uv run pytest -v`         |
+| Update the lock file         | `uv lock`                  |
+| Show dependency tree         | `uv tree`                  |
