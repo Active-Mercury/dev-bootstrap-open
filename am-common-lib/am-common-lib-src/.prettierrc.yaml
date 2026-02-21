@@ -1,0 +1,14 @@
+# Core prettier options
+proseWrap: always
+plugins:
+  - prettier-plugin-sh
+  - "@prettier/plugin-xml"
+
+# prettier-plugin-sh options
+indent: 2
+switchCaseIndent: true
+binaryNextLine: true
+spaceRedirects: true
+
+# @prettier/plugin-xml options
+xmlWhitespaceSensitivity: ignore
