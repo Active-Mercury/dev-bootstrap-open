@@ -15,7 +15,7 @@ RUN apt-get update \
 USER basicuser
 WORKDIR /home/basicuser/prettier-formatter
 RUN npm init -y \
-  && npm install --save-dev prettier prettier-plugin-sh
+  && npm install --save-dev prettier prettier-plugin-sh @prettier/plugin-xml
 
 WORKDIR /home/basicuser
 
