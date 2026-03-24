@@ -33,6 +33,28 @@ INSTALLABLE_FUNCTIONS: list[str] = ["ga", "gb", "gc", "gd", "gco", "gl", "gst"]
 INSTALLABLE_ALIASES: list[str] = []
 INSTALLABLE_EXECUTABLES: list[str] = ["cli-echo", "cli-echo-all", "gtl", "dedupe-path"]
 
+# Sourcing git's bash-completion script introduces many internal helper
+# functions (e.g. _git_add, __git_complete, ___git_complete,
+# __git_wrap_git_checkout) plus bash-completion framework fallbacks like
+# _get_comp_words_by_ref. These are expected side-effects, not symbols
+# we install ourselves.
+_GIT_COMPLETION_PREFIXES: tuple[str, ...] = (
+    "___git",
+    "__git",
+    "_git",
+    "_get_comp_words_by_ref",
+)
+
+_SHORTCUT_TO_GIT_SUBCOMMAND: list[tuple[str, str]] = [
+    ("ga", "add"),
+    ("gb", "branch"),
+    ("gc", "commit"),
+    ("gco", "checkout"),
+    ("gd", "diff"),
+    ("gl", "log"),
+    ("gst", "status"),
+]
+
 
 def test_config() -> None:
     # A dummy test to ensure the relative paths are correct for the remaining
@@ -104,7 +126,12 @@ def test_installed_symbols_are_accounted_for(
             [x for x in final_new_aliases if x not in set(INSTALLABLE_ALIASES)]
         ).described_as("set of aliases not accounted for should be empty").is_empty()
         assert_that(
-            [x for x in final_new_functions if x not in set(INSTALLABLE_FUNCTIONS)]
+            [
+                x
+                for x in final_new_functions
+                if x not in set(INSTALLABLE_FUNCTIONS)
+                and not x.startswith(_GIT_COMPLETION_PREFIXES)
+            ]
         ).described_as("set of functions not accounted for should be empty").is_empty()
 
 
@@ -183,6 +210,27 @@ def test_sym_links(installed_container_ro: DockerRunnerUserView, shortcut: str) 
         assert_that(res.returncode).described_as("returncode").is_equal_to(0)
         assert_that(res.stdout).described_as("stdout").is_equal_to("")
         assert_that(res.stderr).described_as("stderr").is_equal_to("")
+
+
+@pytest.mark.parametrize(
+    "shortcut,git_subcommand",
+    _SHORTCUT_TO_GIT_SUBCOMMAND,
+)
+def test_bash_completion_registered(
+    installed_container_ro: DockerRunnerUserView,
+    shortcut: str,
+    git_subcommand: str,
+) -> None:
+    res = installed_container_ro.run(
+        ["bash", "-ic", f"complete -p {shortcut}"],
+        exec_args=["-t"],
+        text=True,
+    )
+    with soft_assertions():
+        assert_that(res.returncode).described_as("returncode").is_equal_to(0)
+        assert_that(res.stdout).described_as("stdout").contains(
+            f"__git_wrap_git_{git_subcommand}"
+        )
 
 
 def _get_executables_in_path(user_view: DockerRunnerUserView) -> Sequence[str]:
