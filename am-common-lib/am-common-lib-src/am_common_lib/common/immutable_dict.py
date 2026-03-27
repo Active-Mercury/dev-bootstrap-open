@@ -95,3 +95,30 @@ class ImmutableDict[K, V](dict[K, V]):
         :raises TypeError: Always, because the object is immutable.
         """
         raise TypeError("Object is immutable")
+
+    def __ior__(self, other: Any) -> "ImmutableDict[K, V]":  # type: ignore[override, misc]
+        """Disallow in-place union (``|=``).
+
+        :param Any other: The other mapping.
+        :return: This method never returns.
+        :rtype: ImmutableDict[K, V]
+        :raises TypeError: Always, because the object is immutable.
+        """
+        raise TypeError("Object is immutable")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Disallow attribute assignment.
+
+        :param str name: The attribute name.
+        :param Any value: The value to assign.
+        :raises TypeError: Always, because the object is immutable.
+        """
+        raise TypeError("Object is immutable")
+
+    def __delattr__(self, name: str) -> None:
+        """Disallow attribute deletion.
+
+        :param str name: The attribute name.
+        :raises TypeError: Always, because the object is immutable.
+        """
+        raise TypeError("Object is immutable")
