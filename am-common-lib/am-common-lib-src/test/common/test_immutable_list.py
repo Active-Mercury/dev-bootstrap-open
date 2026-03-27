@@ -3,8 +3,105 @@ from typing import Any
 from assertpy import assert_that
 from assertpy import soft_assertions
 import pytest
+from util import get_not_overridden_attributes
 
 from am_common_lib.common import ImmutableList
+
+
+def test_builtin_list_has_no_new_members() -> None:
+    expected_members = {
+        "__add__",
+        "__class__",
+        "__class_getitem__",
+        "__contains__",
+        "__delattr__",
+        "__delitem__",
+        "__dir__",
+        "__doc__",
+        "__eq__",
+        "__format__",
+        "__ge__",
+        "__getattribute__",
+        "__getitem__",
+        "__getstate__",
+        "__gt__",
+        "__hash__",
+        "__iadd__",
+        "__imul__",
+        "__init__",
+        "__init_subclass__",
+        "__iter__",
+        "__le__",
+        "__len__",
+        "__lt__",
+        "__mul__",
+        "__ne__",
+        "__new__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__repr__",
+        "__reversed__",
+        "__rmul__",
+        "__setattr__",
+        "__setitem__",
+        "__sizeof__",
+        "__str__",
+        "__subclasshook__",
+        "append",
+        "clear",
+        "copy",
+        "count",
+        "extend",
+        "index",
+        "insert",
+        "pop",
+        "remove",
+        "reverse",
+        "sort",
+    }
+
+    assert_that(set(dir(list))).is_equal_to(expected_members)
+
+
+def test_non_overriden_attributes() -> None:
+    not_overridden = get_not_overridden_attributes(ImmutableList, list)
+
+    # These are the safe attributes that are expected to remain not overridden
+    expected_safe_attributes = {
+        # Read-only list operations
+        "__len__",
+        "__init__",
+        "__iter__",
+        "__contains__",
+        "__reversed__",
+        "index",
+        "count",
+        # Comparison and equality operations
+        "__eq__",
+        "__ne__",
+        "__lt__",
+        "__le__",
+        "__gt__",
+        "__ge__",
+        # Concatenation and multiplication (return new lists)
+        "__add__",
+        "__mul__",
+        "__rmul__",
+        # Copy operation
+        "copy",
+        # Standard object methods
+        "__new__",
+        "__class__",
+        "__dir__",
+        "__format__",
+        "__getattribute__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__getstate__",
+        "__sizeof__",
+    }
+
+    assert_that(not_overridden).is_equal_to(expected_safe_attributes)
 
 
 @pytest.fixture(scope="module")
