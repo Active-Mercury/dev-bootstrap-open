@@ -68,3 +68,56 @@ docker volume prune
 - **Performance**: Named volumes offer better I/O performance than bind mounts
 - **Security**: Read-only bind mounts prevent accidental modifications to host
   files
+
+## Virtual Development Environments (vdenv)
+
+> **Pre-release.** The functionality is under active development and may have
+> breaking changes.
+
+`vdenv` provides Docker-based virtual development environments accessible over
+SSH.  Each environment is a privileged container with a nested Docker daemon,
+an OpenSSH server, and common developer tools.  Your host repository is
+bind-mounted into the container so code edits are immediately visible on both
+sides.
+
+### Installing the CLI
+
+```bash
+cd am-common-lib/am-common-lib-src
+uv sync
+```
+
+This installs the `vdenv-mgmt` command into the project's virtual environment.
+To make it available globally (without the `uv run` prefix), create a symlink:
+
+```bash
+ln -sf "$(pwd)/.venv/bin/vdenv-mgmt" ~/bin/vdenv-mgmt
+```
+
+After this, `vdenv-mgmt` can be run from any directory.
+
+### Building the Docker Images
+
+Three images must be built in order.  From `am-common-lib/am-common-lib-src`:
+
+```bash
+RESOURCES=_vdenv/src/vdenv/resources
+
+docker build -t dind-uv:latest    "$RESOURCES/dind-uv"
+docker build -t dind-sshd:latest  "$RESOURCES/dind-sshd"
+docker build -t vdenv-ssh:latest  "$RESOURCES/vdenv-ssh"
+```
+
+This creates a three-layer image chain (`dind-uv` → `dind-sshd` → `vdenv-ssh`)
+in your local Docker daemon.
+
+### What Each Step Does
+
+| Step | Effect |
+|---|---|
+| `uv sync` | Installs `vdenv-mgmt` into `.venv/bin/` alongside other project tools |
+| `ln -sf ...` | Symlinks the binary into `~/bin` so it is on your PATH |
+| `docker build` (×3) | Creates the three Docker images in your local Docker daemon |
+
+For full documentation -- image architecture, CLI flags, test instructions --
+see [`am-common-lib/am-common-lib-src/_vdenv/README.md`](am-common-lib/am-common-lib-src/_vdenv/README.md).
