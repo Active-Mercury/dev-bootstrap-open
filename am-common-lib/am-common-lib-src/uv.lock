@@ -4,7 +4,7 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "am-common-lib"
-version = "0.2"
+version = "0.3"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -19,6 +19,7 @@ dev = [
     { name = "pytest-html" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "vdenv" },
 ]
 
 [package.metadata]
@@ -35,6 +36,7 @@ dev = [
     { name = "pytest-html" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "vdenv", editable = "_vdenv" },
 ]
 
 [[package]]
@@ -523,3 +525,8 @@ name = "untokenize"
 version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f7/46/e7cea8159199096e1df52da20a57a6665da80c37fb8aeb848a3e47442c32/untokenize-0.1.1.tar.gz", hash = "sha256:3865dbbbb8efb4bb5eaa72f1be7f3e0be00ea8b7f125c69cbd1f5fda926f37a2", size = 3099, upload-time = "2014-02-08T16:30:40.631Z" }
+
+[[package]]
+name = "vdenv"
+version = "0.0.1a0"
+source = { editable = "_vdenv" }

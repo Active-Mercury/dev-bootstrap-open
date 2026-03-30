@@ -87,9 +87,21 @@ PKG_VENV=~/pkg_test_venv/.venv
 "$PKG_VENV/bin/python" "$PKG_TEST_REPO/am-common-lib/am-common-lib-src/resources/test_install.py" -v
 
 # -----------------------------------------------------------------------------
-# Run tests with coverage
+# Build vdenv Docker images for integration tests
 # -----------------------------------------------------------------------------
 cd ~/git_repos/dev-bootstrap/am-common-lib/am-common-lib-src
+
+VDENV_CI_TAG="ci-$$"
+VDENV_RESOURCES=_vdenv/src/vdenv/resources
+
+echo "==> Building vdenv Docker images (tag: $VDENV_CI_TAG)..."
+docker build -t "dind-uv:$VDENV_CI_TAG" "$VDENV_RESOURCES/dind-uv"
+docker build -t "dind-sshd:$VDENV_CI_TAG" --build-arg "BASE_TAG=$VDENV_CI_TAG" "$VDENV_RESOURCES/dind-sshd"
+docker build -t "vdenv-ssh:$VDENV_CI_TAG" --build-arg "BASE_TAG=$VDENV_CI_TAG" "$VDENV_RESOURCES/vdenv-ssh"
+
+# -----------------------------------------------------------------------------
+# Run tests with coverage
+# -----------------------------------------------------------------------------
 
 echo "==> Running pytest with coverage report (term-missing + HTML)..."
 mkdir -p reports
@@ -101,12 +113,16 @@ uv run pytest -v devenv-test \
 
 uv run pytest -v \
   --cov=am_common_lib \
+  --cov=vdenv \
   --cov-branch \
   --cov-report=term-missing \
   --cov-report=html:reports/htmlcov \
   --cov-report=xml:reports/coverage.xml \
   --junitxml=reports/junit_am_common_lib.xml \
   --html=reports/pytest_am_common_lib.html \
-  --self-contained-html
+  --self-contained-html \
+  --dind-uv="dind-uv:$VDENV_CI_TAG" \
+  --dind-sshd="dind-sshd:$VDENV_CI_TAG" \
+  --vdenv-ssh="vdenv-ssh:$VDENV_CI_TAG"
 
 tar czf reports_"$(date +%Y%m%d)_${TREE_HASH}".tar.gz reports

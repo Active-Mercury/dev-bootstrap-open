@@ -4,3 +4,7 @@
 .pytest_cache/*
 .venv/
 htmlcov/
+
+# Docker build contexts -- formatted/validated by Docker itself, not Prettier.
+# prettier-plugin-sh silently corrupts certain Dockerfiles (appends 0x05).
+_vdenv/src/vdenv/resources/
