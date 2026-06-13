@@ -144,6 +144,7 @@ def calculate_mounting_args(
 
     git_file_target = _parse_git_file_target(git_pointer)
     git_file_uses_absolute_path = git_file_target.is_absolute()
+    worktree_git_dir = (git_repo_path / git_file_target).resolve()
     true_git_dir = _resolve_true_git_dir(git_repo_path)
     common_ancestor = _common_ancestor(git_repo_path, true_git_dir)
     worktree_in_path = mounted_base_path / PurePosixPath(
@@ -152,7 +153,7 @@ def calculate_mounting_args(
     git_dir_in_path = mounted_base_path / PurePosixPath(
         *true_git_dir.relative_to(common_ancestor).parts
     )
-    relative_path = Path(os.path.relpath(true_git_dir, git_repo_path))
+    relative_path = Path(os.path.relpath(worktree_git_dir, git_repo_path))
     return MountingArgs(
         worktree=MountPath(git_repo_path, worktree_in_path),
         git_dir=MountPath(true_git_dir, git_dir_in_path),
@@ -295,6 +296,11 @@ def _ensure_volume_exists(volume_name: str) -> None:
 
     :param str volume_name: Name of the Docker volume to create.
     """
+    result = subprocess.run(
+        ["docker", "volume", "inspect", volume_name], capture_output=True, check=False
+    )
+    if result.returncode == 0:
+        return
     _run_checked(["docker", "volume", "create", volume_name])
 
 
